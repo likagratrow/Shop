@@ -122,14 +122,13 @@ function render() {
             : `<img src="${getImageUrl(images[0] || 'placeholder.jpg')}" class="main-img" alt="${escapeHtml(p.name)}" onerror="this.src='images/placeholder.jpg'">`;
 
         return `
-            <div class="product-card">
-                ${imagesHtml}
-                <h4>${escapeHtml(p.name)}</h4>
-                <p style="font-size:11px; opacity:0.8; flex-grow:1;">${escapeHtml(p.description)}</p>
-                <p style="margin:5px 0;"><b>${formatPrice(p.price)} ₽</b></p>
-                <button type="button" onclick="addToCart(${JSON.stringify(p.id)})">В корзину</button>
-            </div>
-        `;
+    <div class="product-card" onclick="openProductModal(${JSON.stringify(p.id)})">
+        ${imagesHtml}
+        <h4>${escapeHtml(p.name)}</h4>
+        <p style="margin:5px 0;"><b>${formatPrice(p.price)} ₽</b></p>
+        <button type="button" onclick="event.stopPropagation(); addToCart(${JSON.stringify(p.id)})">В корзину</button>
+    </div>
+`;
     }).join('');
 }
 
@@ -266,6 +265,124 @@ function renderCart() {
             renderCart();
         });
     });
+}
+function openProductModal(id) {
+    const product = products.find(
+        p => String(p.id) === String(id)
+    );
+
+    if (!product) return;
+
+    const modal = document.getElementById('product-modal');
+    const content = document.getElementById('product-modal-content');
+
+    if (!modal || !content) return;
+
+    const images = product.image
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+    const imagesHtml = images.length
+        ? `
+            <div class="product-modal-gallery">
+                ${images.map(src => `
+                    <img
+                        src="${getImageUrl(src)}"
+                        alt="${escapeHtml(product.name)}"
+                        onerror="this.src='images/placeholder.jpg'"
+                    >
+                `).join('')}
+            </div>
+        `
+        : '';
+
+    content.innerHTML = `
+        ${imagesHtml}
+
+        <h2 class="product-modal-title">
+            ${escapeHtml(product.name)}
+        </h2>
+
+        <div class="product-modal-description">
+            ${escapeHtml(product.description)}
+        </div>
+
+        <div class="product-modal-price">
+            ${formatPrice(product.price)} ₽
+        </div>
+
+        <div class="product-quantity">
+            <button type="button" onclick="changeProductQuantity(-1)">−</button>
+            <span id="product-quantity-value">1</span>
+            <button type="button" onclick="changeProductQuantity(1)">+</button>
+        </div>
+
+        <button
+            type="button"
+            class="product-add-btn"
+            onclick="addProductToCartFromModal(${JSON.stringify(product.id)})"
+        >
+            В корзину
+        </button>
+    `;
+
+    modal.style.display = 'block';
+}
+
+function closeProductModal() {
+    const modal = document.getElementById('product-modal');
+
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function changeProductQuantity(delta) {
+    const quantityEl = document.getElementById('product-quantity-value');
+
+    if (!quantityEl) return;
+
+    let quantity = Number(quantityEl.innerText) || 1;
+
+    quantity += delta;
+
+    if (quantity < 1) {
+        quantity = 1;
+    }
+
+    quantityEl.innerText = quantity;
+}
+
+function addProductToCartFromModal(id) {
+    const product = products.find(
+        p => String(p.id) === String(id)
+    );
+
+    if (!product) return;
+
+    const quantityEl = document.getElementById('product-quantity-value');
+
+    const quantity = Math.max(
+        1,
+        Number(quantityEl?.innerText) || 1
+    );
+
+    const inCart = cart.find(
+        item => String(item.id) === String(id)
+    );
+
+    if (inCart) {
+        inCart.count += quantity;
+    } else {
+        cart.push({
+            ...product,
+            count: quantity
+        });
+    }
+
+    updateCartButton();
+    closeProductModal();
 }
 function sendOrder() {
     if (!cart.length) return;
