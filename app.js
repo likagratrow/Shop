@@ -1,5 +1,5 @@
 const SHEET_ID = '1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk'; 
-const SHEET_URL = 'https://google.com' + SHEET_ID + '/gviz/tq?tqx=out:json';
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:json';
 
 let tg = window.Telegram.WebApp;
 tg.expand();
@@ -12,26 +12,39 @@ async function loadProducts() {
     try {
         const response = await fetch(SHEET_URL);
         const text = await response.text();
-        const json = JSON.parse(text.substr(47).slice(0, -2));
+        
+        // Надежное извлечение чистого JSON
+        const jsonStart = text.indexOf('{');
+        const jsonEnd = text.lastIndexOf('}') + 1;
+        const json = JSON.parse(text.substring(jsonStart, jsonEnd));
         const rows = json.table.rows;
         
-        products = rows.map((row, index) => ({
-            id: row.c[0] ? row.c[0].v : index,
-            name: row.c[1] ? row.c[1].v : '',
-            price: row.c[2] ? Number(row.c[2].v) : 0,
-            category: row.c[3] ? row.c[3].v : 'items',
-            description: row.c[4] ? row.c[4].v : '',
-            image: row.c[5] ? row.c[5].v : 'placeholder.jpg'
-        }));
+        // Безопасный парсинг строк без риска обрушить скрипт
+        products = rows.map((row, index) => {
+            const cells = row.c || [];
+            return {
+                id: cells[0] && cells[0].v !== null ? cells[0].v : index,
+                name: cells[1] && cells[1].v !== null ? cells[1].v : 'Без названия',
+                price: cells[2] && cells[2].v !== null ? Number(cells[2].v) : 0,
+                category: cells[3] && cells[3].v !== null ? cells[3].v : 'items',
+                description: cells[4] && cells[4].v !== null ? cells[4].v : '',
+                image: cells[5] && cells[5].v !== null ? cells[5].v : 'placeholder.jpg'
+            };
+        });
+        
         render();
     } catch (e) {
-        document.getElementById('products').innerText = 'Ошибка чтения таблицы.';
+        console.error(e);
+        const container = document.getElementById('products');
+        if (container) container.innerText = 'Ошибка чтения таблицы.';
     }
 }
 
 function render() {
     const container = document.getElementById('products');
+    if (!container) return;
     container.innerHTML = '';
+    
     let searchTxt = document.getElementById('search').value.toLowerCase();
     let sortBy = document.getElementById('sort').value;
 
@@ -47,13 +60,13 @@ function render() {
         let imagesHtml = '';
         
         if (imagesArray.length > 1) {
-            imagesHtml = `<div class="product-gallery">`;
+            imagesHtml = '<div class="product-gallery">';
             imagesArray.forEach(imgName => {
-                imagesHtml += `<img src="images/${imgName}" class="gallery-img">`;
+                imagesHtml += '<img src="images/' + imgName + '" class="gallery-img">';
             });
-            imagesHtml += `</div>`;
+            imagesHtml += '</div>';
         } else {
-            imagesHtml = `<img src="images/${imagesArray[0]}" class="main-img">`;
+            imagesHtml = '<img src="images/' + imagesArray[0] + '" class="main-img">';
         }
 
         container.innerHTML += `
@@ -67,6 +80,55 @@ function render() {
         `;
     });
 }
+
+document.getElementById('search').addEventListener('input', render);
+document.getElementById('sort').addEventListener('change', render);
+
+function filterCategory(cat) {
+    currentCategory = cat;
+    document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+    if (event && event.target) {
+        event.target.classList.add('active');
+    }
+    render();
+}
+
+function addToCart(id) {
+    let prod = products.find(p => p.id == id);
+    if (!prod) return;
+    let inCart = cart.find(item => item.id == id);
+    if (inCart) { inCart.count++; } else { cart.push({...prod, count: 1}); }
+    updateCartButton();
+}
+
+function updateCartButton() {
+    let count = cart.reduce((sum, item) => sum + item.count, 0);
+    document.getElementById('cart-count').innerText = count;
+}
+
+function toggleCart() {
+    let modal = document.getElementById('cart-modal');
+    modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
+    let itemsDiv = document.getElementById('cart-items');
+    itemsDiv.innerHTML = '';
+    let total = 0;
+    
+    cart.forEach(item => {
+        total += item.price * item.count;
+        itemsDiv.innerHTML += '<p><b>' + item.name + '</b> x' + item.count + ' — ' + (item.price * item.count) + ' ₽</p>';
+    });
+    document.getElementById('cart-total').innerText = total;
+}
+
+function sendOrder() {
+    if (cart.length === 0) return;
+    let total = cart.reduce((sum, item) => sum + item.price * item.count, 0);
+    let itemsText = cart.map(item => item.name + ' (x' + item.count + ')').join(', ');
+    tg.sendData(JSON.stringify({ items: itemsText, total: total }));
+    tg.close();
+}
+
+loadProducts();
 
 document.getElementById('search').addEventListener('input', render);
 document.getElementById('sort').addEventListener('change', render);
