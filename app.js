@@ -1,181 +1,158 @@
-const SHEET_ID = '1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk'; 
-const SHEET_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:json';
+const SHEET_ID = '1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk';
+const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
 
-let tg = window.Telegram.WebApp;
-tg.expand();
+const tg = window.Telegram?.WebApp;
+if (tg) tg.expand();
 
 let products = [];
 let cart = [];
 let currentCategory = 'all';
 
+function showError(message) {
+    const container = document.getElementById('products');
+    if (!container) return;
+    container.innerHTML = `<div style="padding:20px;font-family:sans-serif;text-align:center;">
+        <h3>Не удалось загрузить товары</h3>
+        <p style="opacity:.75">${escapeHtml(message)}</p>
+        <button onclick="loadProducts()">Повторить</button>
+    </div>`;
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+}
+
+function getImageSrc(value) {
+    const image = String(value ?? '').trim();
+    if (!image) return 'images/placeholder.jpg';
+    if (/^(https?:)?\\//i.test(image) || image.startsWith('data:')) return image;
+    return `images/${encodeURIComponent(image)}`;
+}
+
 async function loadProducts() {
+    const container = document.getElementById('products');
+    if (container) container.innerHTML = '<div style="padding:20px;text-align:center;">Загрузка товаров...</div>';
+
     try {
-        const response = await fetch(SHEET_URL);
+        const response = await fetch(SHEET_URL, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`Google Sheets ответил ${response.status}`);
+
         const text = await response.text();
-        
-        // Надежное извлечение чистого JSON
         const jsonStart = text.indexOf('{');
-        const jsonEnd = text.lastIndexOf('}') + 1;
-        const json = JSON.parse(text.substring(jsonStart, jsonEnd));
-        const rows = json.table.rows;
-        
-        // Безопасный парсинг строк без риска обрушить скрипт
-        products = rows.map((row, index) => {
+        const jsonEnd = text.lastIndexOf('}');
+        if (jsonStart < 0 || jsonEnd < jsonStart) throw new Error('Google Sheets не вернул данные в формате JSON. Проверь публикацию таблицы в интернете.');
+
+        const json = JSON.parse(text.slice(jsonStart, jsonEnd + 1));
+        if (!json.table || !Array.isArray(json.table.rows)) throw new Error('В ответе Google Sheets нет строк товаров.');
+
+        products = json.table.rows.map((row, index) => {
             const cells = row.c || [];
             return {
-                id: cells[0] && cells[0].v !== null ? cells[0].v : index,
-                name: cells[1] && cells[1].v !== null ? cells[1].v : 'Без названия',
-                price: cells[2] && cells[2].v !== null ? Number(cells[2].v) : 0,
-                category: cells[3] && cells[3].v !== null ? cells[3].v : 'items',
-                description: cells[4] && cells[4].v !== null ? cells[4].v : '',
-                image: cells[5] && cells[5].v !== null ? cells[5].v : 'placeholder.jpg'
+                id: cells[0]?.v ?? index,
+                name: cells[1]?.v ?? 'Без названия',
+                price: Number(cells[2]?.v ?? 0) || 0,
+                category: String(cells[3]?.v ?? 'items').trim().toLowerCase(),
+                description: String(cells[4]?.v ?? ''),
+                image: String(cells[5]?.v ?? 'placeholder.jpg')
             };
-        });
-        
+        }).filter(p => p.name && p.name !== 'Без названия' || p.price !== 0 || p.description);
+
         render();
-        } catch (e) {
-        const container = document.getElementById('products');
-        if (container) {
-            container.innerHTML = `<div style="color:red; padding:20px; font-family:sans-serif;">
-                <h3>Внимание, ошибка кода:</h3>
-                <p>${e.message}</p>
-                <p>Стек: ${e.stack ? e.stack.split('\n')[0] : ''}</p>
-            </div>`;
-        }
+    } catch (error) {
+        console.error('Ошибка загрузки товаров:', error);
+        showError(error?.message || 'Неизвестная ошибка');
+    }
 }
 
 function render() {
     const container = document.getElementById('products');
     if (!container) return;
-    container.innerHTML = '';
-    
-    let searchTxt = document.getElementById('search').value.toLowerCase();
-    let sortBy = document.getElementById('sort').value;
+
+    const search = (document.getElementById('search')?.value || '').toLowerCase().trim();
+    const sortBy = document.getElementById('sort')?.value || 'default';
 
     let filtered = products
         .filter(p => currentCategory === 'all' || p.category === currentCategory)
-        .filter(p => p.name.toLowerCase().includes(searchTxt) || p.description.toLowerCase().includes(searchTxt));
+        .filter(p => p.name.toLowerCase().includes(search) || p.description.toLowerCase().includes(search));
 
-    if (sortBy === 'low') filtered.sort((a,b) => a.price - b.price);
-    if (sortBy === 'high') filtered.sort((a,b) => b.price - a.price);
+    if (sortBy === 'low') filtered.sort((a, b) => a.price - b.price);
+    if (sortBy === 'high') filtered.sort((a, b) => b.price - a.price);
 
-    filtered.forEach(p => {
-        const imagesArray = p.image.toString().split(',').map(img => img.trim());
-        let imagesHtml = '';
-        
-        if (imagesArray.length > 1) {
-            imagesHtml = '<div class="product-gallery">';
-            imagesArray.forEach(imgName => {
-                imagesHtml += '<img src="images/' + imgName + '" class="gallery-img">';
-            });
-            imagesHtml += '</div>';
-        } else {
-            imagesHtml = '<img src="images/' + imagesArray[0] + '" class="main-img">';
-        }
-
-        container.innerHTML += `
-            <div class="product-card">
-                ${imagesHtml}
-                <h4>${p.name}</h4>
-                <p style="font-size:11px; opacity:0.8; flex-grow:1;">${p.description}</p>
-                <p style="margin:5px 0;"><b>${p.price} ₽</b></p>
-                <button onclick="addToCart(${p.id})">В корзину</button>
-            </div>
-        `;
-    });
-}
-
-document.getElementById('search').addEventListener('input', render);
-document.getElementById('sort').addEventListener('change', render);
-
-function filterCategory(cat) {
-    currentCategory = cat;
-    document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
-    if (event && event.target) {
-        event.target.classList.add('active');
+    if (!filtered.length) {
+        container.innerHTML = '<div style="padding:20px;text-align:center;opacity:.7;">Товары не найдены</div>';
+        return;
     }
-    render();
+
+    container.innerHTML = filtered.map(p => {
+        const images = p.image.split(',').map(x => x.trim()).filter(Boolean);
+        const imagesHtml = images.length > 1
+            ? `<div class="product-gallery">${images.map(img => `<img src="${escapeHtml(getImageSrc(img))}" class="gallery-img" loading="lazy" onerror="this.src='images/placeholder.jpg'"></div>`).join('')}`
+            : `<img src="${escapeHtml(getImageSrc(images[0] || 'placeholder.jpg'))}" class="main-img" loading="lazy" onerror="this.src='images/placeholder.jpg'">`;
+
+        return `<div class="product-card">
+            ${imagesHtml}
+            <h4>${escapeHtml(p.name)}</h4>
+            <p style="font-size:11px;opacity:.8;flex-grow:1;">${escapeHtml(p.description)}</p>
+            <p style="margin:5px 0;"><b>${p.price} ₽</b></p>
+            <button onclick="addToCart(${JSON.stringify(p.id)})">В корзину</button>
+        </div>`;
+    }).join('');
 }
 
-function addToCart(id) {
-    let prod = products.find(p => p.id == id);
-    if (!prod) return;
-    let inCart = cart.find(item => item.id == id);
-    if (inCart) { inCart.count++; } else { cart.push({...prod, count: 1}); }
-    updateCartButton();
-}
-
-function updateCartButton() {
-    let count = cart.reduce((sum, item) => sum + item.count, 0);
-    document.getElementById('cart-count').innerText = count;
-}
-
-function toggleCart() {
-    let modal = document.getElementById('cart-modal');
-    modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
-    let itemsDiv = document.getElementById('cart-items');
-    itemsDiv.innerHTML = '';
-    let total = 0;
-    
-    cart.forEach(item => {
-        total += item.price * item.count;
-        itemsDiv.innerHTML += '<p><b>' + item.name + '</b> x' + item.count + ' — ' + (item.price * item.count) + ' ₽</p>';
-    });
-    document.getElementById('cart-total').innerText = total;
-}
-
-function sendOrder() {
-    if (cart.length === 0) return;
-    let total = cart.reduce((sum, item) => sum + item.price * item.count, 0);
-    let itemsText = cart.map(item => item.name + ' (x' + item.count + ')').join(', ');
-    tg.sendData(JSON.stringify({ items: itemsText, total: total }));
-    tg.close();
-}
-
-loadProducts();
-
-document.getElementById('search').addEventListener('input', render);
-document.getElementById('sort').addEventListener('change', render);
-
-function filterCategory(cat) {
+function filterCategory(cat, event) {
     currentCategory = cat;
     document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
-    event.target.classList.add('active');
+    if (event?.currentTarget) event.currentTarget.classList.add('active');
     render();
 }
 
 function addToCart(id) {
-    let prod = products.find(p => p.id == id);
-    let inCart = cart.find(item => item.id == id);
-    if (inCart) { inCart.count++; } else { cart.push({...prod, count: 1}); }
+    const prod = products.find(p => String(p.id) === String(id));
+    if (!prod) return;
+    const inCart = cart.find(item => String(item.id) === String(id));
+    if (inCart) inCart.count++;
+    else cart.push({ ...prod, count: 1 });
     updateCartButton();
 }
 
 function updateCartButton() {
-    let count = cart.reduce((sum, item) => sum + item.count, 0);
-    document.getElementById('cart-count').innerText = count;
+    const el = document.getElementById('cart-count');
+    if (el) el.innerText = cart.reduce((sum, item) => sum + item.count, 0);
 }
 
 function toggleCart() {
-    let modal = document.getElementById('cart-modal');
+    const modal = document.getElementById('cart-modal');
+    if (!modal) return;
     modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
-    let itemsDiv = document.getElementById('cart-items');
-    itemsDiv.innerHTML = '';
+
+    const itemsDiv = document.getElementById('cart-items');
+    if (!itemsDiv) return;
     let total = 0;
-    
-    cart.forEach(item => {
-        total += item.price * item.count;
-        itemsDiv.innerHTML += `<p><b>${item.name}</b> x${item.count} — ${item.price * item.count} ₽</p>`;
-    });
+    itemsDiv.innerHTML = cart.map(item => {
+        const itemTotal = item.price * item.count;
+        total += itemTotal;
+        return `<p><b>${escapeHtml(item.name)}</b> x${item.count} — ${itemTotal} ₽</p>`;
+    }).join('') || '<p>Корзина пуста</p>';
+
     document.getElementById('cart-total').innerText = total;
 }
 
 function sendOrder() {
-    if (cart.length === 0) return;
-    let total = cart.reduce((sum, item) => sum + item.price * item.count, 0);
-    let itemsText = cart.map(item => `${item.name} (x${item.count})`).join(', ');
-    tg.sendData(JSON.stringify({ items: itemsText, total: total }));
-    tg.close();
+    if (!cart.length) return;
+    const total = cart.reduce((sum, item) => sum + item.price * item.count, 0);
+    const itemsText = cart.map(item => `${item.name} (x${item.count})`).join(', ');
+    const payload = JSON.stringify({ items: itemsText, total });
+
+    if (tg?.sendData) {
+        tg.sendData(payload);
+        tg.close();
+    } else {
+        alert(`Заказ: ${itemsText}\nИтого: ${total} ₽`);
+    }
 }
 
-loadProducts();
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('search')?.addEventListener('input', render);
+    document.getElementById('sort')?.addEventListener('change', render);
+    loadProducts();
+});

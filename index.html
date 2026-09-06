@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Strannstuff Магазин</title>
-    <script src="https://telegram.org"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -18,10 +18,10 @@
     </div>
 
     <div class="categories">
-        <button class="cat-btn active" onclick="filterCategory('all')">Все</button>
-        <button class="cat-btn" onclick="filterCategory('items')">Изделия</button>
-        <button class="cat-btn" onclick="filterCategory('diogen')">Диоген</button>
-        <button class="cat-btn" onclick="filterCategory('lockers')">Локеры</button>
+        <button class="cat-btn active" onclick="filterCategory('all', event)">Все</button>
+        <button class="cat-btn" onclick="filterCategory('items', event)">Изделия</button>
+        <button class="cat-btn" onclick="filterCategory('diogen', event)">Диоген</button>
+        <button class="cat-btn" onclick="filterCategory('lockers', event)">Локеры</button>
     </div>
 
     <div id="products" class="products-grid">Загрузка товаров...</div>
