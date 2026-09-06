@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strannstuff Магазин</title>
+    <script src="https://telegram.org"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="header">
+        <input type="text" id="search" placeholder="🔍 Поиск товаров...">
+        <select id="sort">
+            <option value="default">Сортировка</option>
+            <option value="low">Сначала дешевые</option>
+            <option value="high">Сначала дорогие</option>
+        </select>
+    </div>
+
+    <div class="categories">
+        <button class="cat-btn active" onclick="filterCategory('all')">Все</button>
+        <button class="cat-btn" onclick="filterCategory('items')">Изделия</button>
+        <button class="cat-btn" onclick="filterCategory('diogen')">Диоген</button>
+        <button class="cat-btn" onclick="filterCategory('lockers')">Локеры</button>
+    </div>
+
+    <div id="products" class="products-grid">Загрузка товаров...</div>
+
+    <div class="footer">
+        <button id="cart-btn" onclick="toggleCart()">🛒 Корзина (<span id="cart-count">0</span>)</button>
+    </div>
+
+    <div id="cart-modal" class="modal">
+        <div class="modal-content">
+            <h2>Ваша корзина</h2>
+            <div id="cart-items"></div>
+            <h3>Итого: <span id="cart-total">0</span> ₽</h3>
+            <button class="order-btn" onclick="sendOrder()">Оформить перевод</button>
+            <button class="close-btn" onclick="toggleCart()">Закрыть</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
