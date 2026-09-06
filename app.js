@@ -169,83 +169,104 @@ function updateCartButton() {
 
 function toggleCart() {
     const modal = document.getElementById('cart-modal');
-
     if (!modal) return;
 
     if (modal.style.display === 'block') {
         modal.style.display = 'none';
-    } else {
-        modal.style.display = 'block';
-        renderCart();
+        return;
     }
+
+    modal.style.display = 'block';
+    renderCart();
 }
 
 function renderCart() {
     const itemsDiv = document.getElementById('cart-items');
-
     if (!itemsDiv) return;
-
-    itemsDiv.innerHTML = '';
 
     let total = 0;
 
-    if (!cart.length) {
-        itemsDiv.innerHTML = '<p style="text-align:center;">Корзина пуста.</p>';
-    } else {
-        cart.forEach(item => {
-            total += item.price * item.count;
+    itemsDiv.innerHTML = cart.map((item, index) => {
+        total += item.price * item.count;
 
-            itemsDiv.innerHTML += `
-                <div style="padding:10px 0; border-bottom:1px solid #ddd;">
-                    
-                    <div style="margin-bottom:8px;">
-                        <b>${escapeHtml(item.name)}</b>
-                    </div>
-
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        
-                        <button
-                            type="button"
-                            onclick="changeCartQuantity(${JSON.stringify(item.id)}, -1)"
-                            style="width:35px; height:35px; font-size:20px;"
-                        >−</button>
-
-                        <span style="min-width:25px; text-align:center;">
-                            ${item.count}
-                        </span>
-
-                        <button
-                            type="button"
-                            onclick="changeCartQuantity(${JSON.stringify(item.id)}, 1)"
-                            style="width:35px; height:35px; font-size:20px;"
-                        >+</button>
-
-                        <span style="margin-left:auto;">
-                            <b>${formatPrice(item.price * item.count)} ₽</b>
-                        </span>
-
-                        <button
-                            type="button"
-                            onclick="removeFromCart(${JSON.stringify(item.id)})"
-                            style="border:none; background:none; font-size:20px; padding:5px;"
-                            title="Удалить"
-                        >🗑️</button>
-
-                    </div>
+        return `
+            <div class="cart-item" data-index="${index}" style="margin-bottom:15px;">
+                <div style="margin-bottom:8px;">
+                    <b>${escapeHtml(item.name)}</b>
                 </div>
-            `;
-        });
-    }
+
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <button type="button" class="cart-minus"
+                        data-index="${index}"
+                        style="width:40px; height:36px;">−</button>
+
+                    <span style="min-width:20px; text-align:center;">
+                        ${item.count}
+                    </span>
+
+                    <button type="button" class="cart-plus"
+                        data-index="${index}"
+                        style="width:40px; height:36px;">+</button>
+
+                    <span style="margin-left:auto;">
+                        ${formatPrice(item.price * item.count)} ₽
+                    </span>
+
+                    <button type="button" class="cart-remove"
+                        data-index="${index}"
+                        style="width:40px; height:36px;">🗑️</button>
+                </div>
+            </div>
+        `;
+    }).join('');
 
     const totalEl = document.getElementById('cart-total');
-
     if (totalEl) {
         totalEl.innerText = formatPrice(total);
     }
 
     updateCartButton();
-}
 
+    itemsDiv.querySelectorAll('.cart-minus').forEach(button => {
+        button.addEventListener('click', function() {
+            const index = Number(this.dataset.index);
+
+            if (!cart[index]) return;
+
+            cart[index].count--;
+
+            if (cart[index].count <= 0) {
+                cart.splice(index, 1);
+            }
+
+            renderCart();
+        });
+    });
+
+    itemsDiv.querySelectorAll('.cart-plus').forEach(button => {
+        button.addEventListener('click', function() {
+            const index = Number(this.dataset.index);
+
+            if (!cart[index]) return;
+
+            cart[index].count++;
+
+            renderCart();
+        });
+    });
+
+    itemsDiv.querySelectorAll('.cart-remove').forEach(button => {
+        button.addEventListener('click', function() {
+            const index = Number(this.dataset.index);
+
+            if (!cart[index]) return;
+
+            cart.splice(index, 1);
+
+            renderCart();
+        });
+    });
+}
 function sendOrder() {
     if (!cart.length) return;
 
