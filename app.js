@@ -1,4 +1,4 @@
-const SHEET_ID = '1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOug';
+const SHEET_ID = '1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk';
 const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
 
 const tg = window.Telegram?.WebApp;
@@ -32,9 +32,9 @@ function escapeHtml(value) {
 }
 
 function parseGvizResponse(text) {
+    // Google Visualization API returns JSON wrapped in a function call.
     const start = text.indexOf('{');
     const end = text.lastIndexOf('}');
-
     if (start === -1 || end === -1 || end <= start) {
         throw new Error('Google Таблица не вернула данные. Проверьте публикацию таблицы в интернете.');
     }
@@ -69,7 +69,6 @@ async function loadProducts() {
 
         products = json.table.rows.map((row, index) => {
             const cells = row.c || [];
-
             const value = (columnIndex, fallback = '') =>
                 cells[columnIndex] && cells[columnIndex].v !== null && cells[columnIndex].v !== undefined
                     ? cells[columnIndex].v
@@ -86,7 +85,6 @@ async function loadProducts() {
         });
 
         render();
-
     } catch (error) {
         console.error('Ошибка загрузки товаров:', error);
         showLoadError(error);
@@ -118,92 +116,26 @@ function render() {
     }
 
     container.innerHTML = filtered.map(p => {
-
-        /*
-         * ФОТОГРАФИИ:
-         * В таблице можно писать:
-         *
-         * сумка.jpg
-         *
-         * или:
-         *
-         * сумка.jpg,IMG_20260828_120957131.jpg
-         *
-         * Пробелы вокруг запятой тоже разрешены.
-         */
-        const images = String(p.image || '')
-            .split(',')
-            .map(s => s.trim())
-            .filter(Boolean);
-
-        let imagesHtml;
-
-        if (images.length > 1) {
-
-            // Несколько фотографий — горизонтальная галерея
-            imagesHtml = `
-                <div class="product-gallery">
-                    ${images.map(src => `
-                        <img
-                            src="${getImageUrl(src)}"
-                            class="gallery-img"
-                            alt="${escapeHtml(p.name)}"
-                            onerror="this.onerror=null; this.src='images/placeholder.jpg';"
-                        >
-                    `).join('')}
-                </div>
-            `;
-
-        } else {
-
-            // Одна фотография
-            const src = images[0] || 'placeholder.jpg';
-
-            imagesHtml = `
-                <img
-                    src="${getImageUrl(src)}"
-                    class="main-img"
-                    alt="${escapeHtml(p.name)}"
-                    onerror="this.onerror=null; this.src='images/placeholder.jpg';"
-                >
-            `;
-        }
+        const images = p.image.split(',').map(s => s.trim()).filter(Boolean);
+        const imagesHtml = images.length > 1
+            ? `<div class="product-gallery">${images.map(src => `<img src="${getImageUrl(src)}" class="gallery-img" alt="${escapeHtml(p.name)}" onerror="this.src='images/placeholder.jpg'"></div>`).join('')}`
+            : `<img src="${getImageUrl(images[0] || 'placeholder.jpg')}" class="main-img" alt="${escapeHtml(p.name)}" onerror="this.src='images/placeholder.jpg'">`;
 
         return `
             <div class="product-card">
-
                 ${imagesHtml}
-
                 <h4>${escapeHtml(p.name)}</h4>
-
-                <p style="font-size:11px; opacity:0.8; flex-grow:1;">
-                    ${escapeHtml(p.description)}
-                </p>
-
-                <p style="margin:5px 0;">
-                    <b>${formatPrice(p.price)} ₽</b>
-                </p>
-
-                <button
-                    type="button"
-                    onclick="addToCart(${JSON.stringify(p.id)})"
-                >
-                    В корзину
-                </button>
-
+                <p style="font-size:11px; opacity:0.8; flex-grow:1;">${escapeHtml(p.description)}</p>
+                <p style="margin:5px 0;"><b>${formatPrice(p.price)} ₽</b></p>
+                <button type="button" onclick="addToCart(${JSON.stringify(p.id)})">В корзину</button>
             </div>
         `;
-
     }).join('');
 }
 
 function getImageUrl(image) {
     const value = String(image || '').trim();
-
-    if (/^(https?:)?\/\//i.test(value) || value.startsWith('data:')) {
-        return value;
-    }
-
+    if (/^(https?:)?\/\//i.test(value) || value.startsWith('data:')) return value;
     return `images/${encodeURIComponent(value)}`;
 }
 
@@ -213,11 +145,8 @@ function formatPrice(value) {
 
 function filterCategory(cat, button) {
     currentCategory = cat;
-
     document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
-
     if (button) button.classList.add('active');
-
     render();
 }
 
@@ -226,15 +155,8 @@ function addToCart(id) {
     if (!product) return;
 
     const inCart = cart.find(item => String(item.id) === String(id));
-
-    if (inCart) {
-        inCart.count++;
-    } else {
-        cart.push({
-            ...product,
-            count: 1
-        });
-    }
+    if (inCart) inCart.count++;
+    else cart.push({ ...product, count: 1 });
 
     updateCartButton();
 }
@@ -242,58 +164,33 @@ function addToCart(id) {
 function updateCartButton() {
     const count = cart.reduce((sum, item) => sum + item.count, 0);
     const el = document.getElementById('cart-count');
-
     if (el) el.innerText = count;
 }
 
 function toggleCart() {
     const modal = document.getElementById('cart-modal');
     const itemsDiv = document.getElementById('cart-items');
-
     if (!modal || !itemsDiv) return;
 
-    modal.style.display =
-        modal.style.display === 'block' ? 'none' : 'block';
-
+    modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
     itemsDiv.innerHTML = '';
 
     let total = 0;
-
     cart.forEach(item => {
         total += item.price * item.count;
-
-        itemsDiv.innerHTML += `
-            <p>
-                <b>${escapeHtml(item.name)}</b>
-                x${item.count} —
-                ${formatPrice(item.price * item.count)} ₽
-            </p>
-        `;
+        itemsDiv.innerHTML += `<p><b>${escapeHtml(item.name)}</b> x${item.count} — ${formatPrice(item.price * item.count)} ₽</p>`;
     });
 
     const totalEl = document.getElementById('cart-total');
-
-    if (totalEl) {
-        totalEl.innerText = formatPrice(total);
-    }
+    if (totalEl) totalEl.innerText = formatPrice(total);
 }
 
 function sendOrder() {
     if (!cart.length) return;
 
-    const total = cart.reduce(
-        (sum, item) => sum + item.price * item.count,
-        0
-    );
-
-    const itemsText = cart
-        .map(item => `${item.name} (x${item.count})`)
-        .join(', ');
-
-    const payload = JSON.stringify({
-        items: itemsText,
-        total
-    });
+    const total = cart.reduce((sum, item) => sum + item.price * item.count, 0);
+    const itemsText = cart.map(item => `${item.name} (x${item.count})`).join(', ');
+    const payload = JSON.stringify({ items: itemsText, total });
 
     if (tg?.sendData) {
         tg.sendData(payload);
