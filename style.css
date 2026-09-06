@@ -1,0 +1,30 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--tg-theme-bg-color, #fff);
+    color: var(--tg-theme-text-color, #000);
+    margin: 0; padding: 10px; padding-bottom: 70px;
+}
+.header { display: flex; gap: 10px; margin-bottom: 10px; }
+#search { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #ccc; background: var(--tg-theme-secondary-bg-color, #eee); color: currentcolor; }
+#sort { padding: 10px; border-radius: 8px; border: 1px solid #ccc; background: var(--tg-theme-secondary-bg-color, #eee); color: currentcolor; }
+.categories { display: flex; gap: 5px; overflow-x: auto; margin-bottom: 15px; }
+.cat-btn { padding: 8px 15px; border: none; border-radius: 20px; background: #eee; cursor: pointer; white-space: nowrap; }
+.cat-btn.active { background: var(--tg-theme-button-color, #2481cc); color: white; }
+.products-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.product-card { border: 1px solid #eee; padding: 10px; border-radius: 12px; display: flex; flex-direction: column; background: var(--tg-theme-secondary-bg-color, #fafafa); }
+
+
+/* ГАЛЕРЕЯ С НЕСКОЛЬКИМИ ФОТО */
+.product-gallery { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 5px; width: 100%; height: 120px; border-radius: 8px; }
+.gallery-img { flex: 0 0 100%; scroll-snap-align: start; width: 100%; height: 120px; object-fit: cover; border-radius: 8px; }
+.product-gallery::-webkit-scrollbar { display: none; }
+.main-img { width: 100%; height: 120px; object-fit: cover; border-radius: 8px; }
+
+.product-card h4 { margin: 8px 0 4px 0; font-size: 14px; }
+.product-card button { margin-top: auto; padding: 8px; background: var(--tg-theme-button-color, #2481cc); color: white; border: none; border-radius: 8px; cursor: pointer; }
+.footer { position: fixed; bottom: 0; left: 0; right: 0; padding: 10px; background: var(--tg-theme-bg-color, #fff); border-top: 1px solid #eee; text-align: center; }
+#cart-btn { width: 100%; padding: 12px; background: #4caf50; color: white; border: none; border-radius: 8px; font-size: 16px; }
+.modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10; }
+.modal-content { background: white; margin: 20% auto; padding: 20px; width: 80%; border-radius: 12px; max-height: 70%; overflow-y: auto; color: black; }
+.order-btn { width: 100%; padding: 10px; background: #2481cc; color: white; border: none; border-radius: 8px; margin-bottom: 5px; font-size: 16px; }
+.close-btn { width: 100%; padding: 10px; background: #9e9e9e; color: white; border: none; border-radius: 8px; }
