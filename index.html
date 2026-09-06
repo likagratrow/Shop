@@ -18,10 +18,10 @@
     </div>
 
     <div class="categories">
-        <button class="cat-btn active" onclick="filterCategory('all', event)">Все</button>
-        <button class="cat-btn" onclick="filterCategory('items', event)">Изделия</button>
-        <button class="cat-btn" onclick="filterCategory('diogen', event)">Диоген</button>
-        <button class="cat-btn" onclick="filterCategory('lockers', event)">Локеры</button>
+        <button class="cat-btn active" onclick="filterCategory('all', this)">Все</button>
+        <button class="cat-btn" onclick="filterCategory('items', this)">Изделия</button>
+        <button class="cat-btn" onclick="filterCategory('diogen', this)">Диоген</button>
+        <button class="cat-btn" onclick="filterCategory('lockers', this)">Локеры</button>
     </div>
 
     <div id="products" class="products-grid">Загрузка товаров...</div>
@@ -40,6 +40,6 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
 </body>
 </html>
