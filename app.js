@@ -1,4 +1,4 @@
-const SHEET_ID = '1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk'; 
+const SHEET_ID = `1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk`; 
 const SHEET_URL = `https://google.com{SHEET_ID}/gviz/tq?tqx=out:json`;
 
 let tg = window.Telegram.WebApp;
