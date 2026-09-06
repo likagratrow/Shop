@@ -169,20 +169,81 @@ function updateCartButton() {
 
 function toggleCart() {
     const modal = document.getElementById('cart-modal');
-    const itemsDiv = document.getElementById('cart-items');
-    if (!modal || !itemsDiv) return;
 
-    modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
+    if (!modal) return;
+
+    if (modal.style.display === 'block') {
+        modal.style.display = 'none';
+    } else {
+        modal.style.display = 'block';
+        renderCart();
+    }
+}
+
+function renderCart() {
+    const itemsDiv = document.getElementById('cart-items');
+
+    if (!itemsDiv) return;
+
     itemsDiv.innerHTML = '';
 
     let total = 0;
-    cart.forEach(item => {
-        total += item.price * item.count;
-        itemsDiv.innerHTML += `<p><b>${escapeHtml(item.name)}</b> x${item.count} — ${formatPrice(item.price * item.count)} ₽</p>`;
-    });
+
+    if (!cart.length) {
+        itemsDiv.innerHTML = '<p style="text-align:center;">Корзина пуста.</p>';
+    } else {
+        cart.forEach(item => {
+            total += item.price * item.count;
+
+            itemsDiv.innerHTML += `
+                <div style="padding:10px 0; border-bottom:1px solid #ddd;">
+                    
+                    <div style="margin-bottom:8px;">
+                        <b>${escapeHtml(item.name)}</b>
+                    </div>
+
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        
+                        <button
+                            type="button"
+                            onclick="changeCartQuantity(${JSON.stringify(item.id)}, -1)"
+                            style="width:35px; height:35px; font-size:20px;"
+                        >−</button>
+
+                        <span style="min-width:25px; text-align:center;">
+                            ${item.count}
+                        </span>
+
+                        <button
+                            type="button"
+                            onclick="changeCartQuantity(${JSON.stringify(item.id)}, 1)"
+                            style="width:35px; height:35px; font-size:20px;"
+                        >+</button>
+
+                        <span style="margin-left:auto;">
+                            <b>${formatPrice(item.price * item.count)} ₽</b>
+                        </span>
+
+                        <button
+                            type="button"
+                            onclick="removeFromCart(${JSON.stringify(item.id)})"
+                            style="border:none; background:none; font-size:20px; padding:5px;"
+                            title="Удалить"
+                        >🗑️</button>
+
+                    </div>
+                </div>
+            `;
+        });
+    }
 
     const totalEl = document.getElementById('cart-total');
-    if (totalEl) totalEl.innerText = formatPrice(total);
+
+    if (totalEl) {
+        totalEl.innerText = formatPrice(total);
+    }
+
+    updateCartButton();
 }
 
 function sendOrder() {
