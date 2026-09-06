@@ -33,11 +33,15 @@ async function loadProducts() {
         });
         
         render();
-    } catch (e) {
-        console.error(e);
+        } catch (e) {
         const container = document.getElementById('products');
-        if (container) container.innerText = 'Ошибка чтения таблицы.';
-    }
+        if (container) {
+            container.innerHTML = `<div style="color:red; padding:20px; font-family:sans-serif;">
+                <h3>Внимание, ошибка кода:</h3>
+                <p>${e.message}</p>
+                <p>Стек: ${e.stack ? e.stack.split('\n')[0] : ''}</p>
+            </div>`;
+        }
 }
 
 function render() {
