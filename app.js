@@ -4,7 +4,7 @@ const SHEET_ID = '1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk';
 // J:M — это картинки для просмотра внутри Google Таблиц,
 // сайту они не нужны.
 const SHEET_URL =
-    `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=Sheet1`;
+    `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
 
 const tg = window.Telegram?.WebApp;
 
