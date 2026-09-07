@@ -1,52 +1,187 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
+
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Strannstuff Магазин</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <link rel="stylesheet" href="style.css">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        Strannstuff Магазин
+    </title>
+
+    <script
+        src="https://telegram.org/js/telegram-web-app.js"
+    ></script>
+
+    <link
+        rel="stylesheet"
+        href="style.css"
+    >
+
 </head>
+
+
 <body>
+
+
     <div class="header">
-        <input type="text" id="search" placeholder="🔍 Поиск товаров...">
+
+        <input
+            type="text"
+            id="search"
+            placeholder="🔍 Поиск товаров..."
+        >
+
         <select id="sort">
-            <option value="default">Сортировка</option>
-            <option value="low">Сначала дешевые</option>
-            <option value="high">Сначала дорогие</option>
+
+            <option value="default">
+                Сортировка
+            </option>
+
+            <option value="low">
+                Сначала дешевые
+            </option>
+
+            <option value="high">
+                Сначала дорогие
+            </option>
+
         </select>
+
     </div>
+
 
     <div class="categories">
-        <button class="cat-btn active" onclick="filterCategory('all', this)">Все</button>
-        <button class="cat-btn" onclick="filterCategory('items', this)">Изделия</button>
-        <button class="cat-btn" onclick="filterCategory('diogen', this)">Диоген</button>
-        <button class="cat-btn" onclick="filterCategory('lockers', this)">Локеры</button>
+
+        <button
+            class="cat-btn active"
+            onclick="filterCategory('all', this)"
+        >
+            Все
+        </button>
+
+        <button
+            class="cat-btn"
+            onclick="filterCategory('items', this)"
+        >
+            Изделия
+        </button>
+
+        <button
+            class="cat-btn"
+            onclick="filterCategory('diogen', this)"
+        >
+            Диоген
+        </button>
+
+        <button
+            class="cat-btn"
+            onclick="filterCategory('lockers', this)"
+        >
+            Локеры
+        </button>
+
     </div>
 
-    <div id="products" class="products-grid">Загрузка товаров...</div>
+
+    <div
+        id="products"
+        class="products-grid"
+    >
+        Загрузка товаров...
+    </div>
+
 
     <div class="footer">
-        <button id="cart-btn" onclick="toggleCart()">🛒 Корзина (<span id="cart-count">0</span>)</button>
+
+        <button
+            id="cart-btn"
+            class="cart-empty"
+            onclick="toggleCart()"
+        >
+            🛒 Корзина
+            (<span id="cart-count">0</span>)
+        </button>
+
     </div>
 
-    <div id="cart-modal" class="modal">
+
+    <!-- КОРЗИНА -->
+
+    <div
+        id="cart-modal"
+        class="modal"
+    >
+
         <div class="modal-content">
-            <h2>Ваша корзина</h2>
-            <div id="cart-items"></div>
-            <h3>Итого: <span id="cart-total">0</span> ₽</h3>
-            <button class="order-btn" onclick="sendOrder()">Оформить перевод</button>
-            <button class="close-btn" onclick="toggleCart()">Закрыть</button>
-        </div>
-    </div>
-<div id="product-modal" class="modal">
-    <div class="modal-content product-modal-content">
-        <button type="button" class="product-modal-close" onclick="closeProductModal()">×</button>
 
-        <div id="product-modal-content"></div>
+            <h2>
+                Ваша корзина
+            </h2>
+
+            <div id="cart-items"></div>
+
+            <h3>
+                Итого:
+                <span id="cart-total">0</span>
+                ₽
+            </h3>
+
+            <button
+                class="order-btn"
+                onclick="sendOrder()"
+            >
+                Оформить перевод
+            </button>
+
+            <button
+                class="close-btn"
+                onclick="toggleCart()"
+            >
+                Закрыть
+            </button>
+
+        </div>
+
     </div>
-</div>
-    
-    <script src="app.js?v=2"></script>
+
+
+    <!-- КАРТОЧКА ТОВАРА -->
+
+    <div
+        id="product-modal"
+        class="modal"
+    >
+
+        <div
+            class="modal-content product-modal-content"
+        >
+
+            <button
+                type="button"
+                class="product-modal-close"
+                onclick="closeProductModal()"
+            >
+                ×
+            </button>
+
+
+            <div
+                id="product-modal-content"
+            ></div>
+
+        </div>
+
+    </div>
+
+
+    <script src="app.js?v=3"></script>
+
 </body>
+
 </html>
