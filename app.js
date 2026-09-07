@@ -75,13 +75,16 @@ async function loadProducts() {
                     : fallback;
 
             return {
-                id: value(0, index),
-                name: String(value(1, 'Без названия')),
-                price: Number(value(2, 0)) || 0,
-                category: String(value(3, 'items')).trim().toLowerCase(),
-                description: String(value(4, '')),
-                image: String(value(5, 'placeholder.jpg'))
-            };
+    id: value(0, index),
+    name: String(value(1, 'Без названия')),
+    price: Number(value(2, 0)) || 0,
+    category: String(value(3, 'items')).trim().toLowerCase(),
+    description: String(value(4, '')),
+    image: String(value(5, '')),
+    image2: String(value(6, '')),
+    image3: String(value(7, '')),
+    image4: String(value(8, ''))
+};
         });
 
         render();
@@ -116,7 +119,9 @@ function render() {
     }
 
     container.innerHTML = filtered.map(p => {
-        const images = p.image.split(',').map(s => s.trim()).filter(Boolean);
+        const images = [p.image, p.image2, p.image3, p.image4]
+    .map(s => String(s || '').trim())
+    .filter(Boolean);
         const imagesHtml = images.length > 1
             ? `<div class="product-gallery">${images.map(src => `<img src="${getImageUrl(src)}" class="gallery-img" alt="${escapeHtml(p.name)}" onerror="this.src='images/placeholder.jpg'"></div>`).join('')}`
             : `<img src="${getImageUrl(images[0] || 'placeholder.jpg')}" class="main-img" alt="${escapeHtml(p.name)}" onerror="this.src='images/placeholder.jpg'">`;
@@ -278,10 +283,9 @@ function openProductModal(id) {
 
     if (!modal || !content) return;
 
-    const images = product.image
-        .split(',')
-        .map(s => s.trim())
-        .filter(Boolean);
+    const images = [product.image, product.image2, product.image3, product.image4]
+    .map(s => String(s || '').trim())
+    .filter(Boolean);
 
     const imagesHtml = images.length
         ? `
