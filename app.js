@@ -1,8 +1,8 @@
 const SHEET_ID = '1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk';
 
-// Берём только A:I.
-// J:M — это картинки для просмотра внутри Google Таблиц,
-// сайту они не нужны.
+// Берём данные из таблицы.
+// F:I — ссылки на фотографии.
+// J:M — картинки внутри Google Таблиц, сайту они не нужны.
 const SHEET_URL =
     `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
 
@@ -74,21 +74,20 @@ function parseGvizResponse(text) {
 
 function getImageUrl(image) {
 
-    const value = String(image || '').trim();
+    const value =
+        String(image || '').trim();
 
-    // Пустая ячейка
+
     if (!value) {
         return 'images/placeholder.jpg';
     }
 
-    // Старый тип значения Google Sheets.
-    // Если в F:I случайно осталась картинка вместо URL —
-    // не пытаемся сделать из слова "image" путь.
+
     if (value.toLowerCase() === 'image') {
         return 'images/placeholder.jpg';
     }
 
-    // Уже готовая ссылка
+
     if (
         /^(https?:)?\/\//i.test(value) ||
         value.startsWith('data:')
@@ -96,7 +95,7 @@ function getImageUrl(image) {
         return value;
     }
 
-    // Старый вариант с локальными файлами
+
     return `images/${encodeURIComponent(value)}`;
 }
 
@@ -109,12 +108,16 @@ function getProductImages(product) {
         product.image3,
         product.image4
     ]
-        .map(value => String(value || '').trim())
+        .map(value =>
+            String(value || '').trim()
+        )
         .filter(value => {
+
             if (!value) return false;
 
-            // Google Sheets иногда отдаёт тип картинки как "image".
-            if (value.toLowerCase() === 'image') {
+            if (
+                value.toLowerCase() === 'image'
+            ) {
                 return false;
             }
 
@@ -134,15 +137,23 @@ function showLoadError(error) {
 
     if (!container) return;
 
+
     const message =
         error?.message ||
         String(error) ||
         'Неизвестная ошибка';
 
+
     container.innerHTML = `
         <div class="load-error">
-            <h3>Не удалось загрузить товары</h3>
-            <p>${escapeHtml(message)}</p>
+
+            <h3>
+                Не удалось загрузить товары
+            </h3>
+
+            <p>
+                ${escapeHtml(message)}
+            </p>
 
             <button
                 type="button"
@@ -150,6 +161,7 @@ function showLoadError(error) {
             >
                 Повторить
             </button>
+
         </div>
     `;
 }
@@ -164,6 +176,7 @@ async function loadProducts() {
     const container =
         document.getElementById('products');
 
+
     if (container) {
 
         container.innerHTML =
@@ -174,10 +187,13 @@ async function loadProducts() {
     try {
 
         const response =
-            await fetch(SHEET_URL, {
-                method: 'GET',
-                cache: 'no-store'
-            });
+            await fetch(
+                SHEET_URL,
+                {
+                    method: 'GET',
+                    cache: 'no-store'
+                }
+            );
 
 
         if (!response.ok) {
@@ -216,10 +232,14 @@ async function loadProducts() {
 
 
                     const value =
-                        (columnIndex, fallback = '') => {
+                        (
+                            columnIndex,
+                            fallback = ''
+                        ) => {
 
                             const cell =
                                 cells[columnIndex];
+
 
                             if (
                                 cell &&
@@ -228,6 +248,7 @@ async function loadProducts() {
                             ) {
                                 return cell.v;
                             }
+
 
                             return fallback;
                         };
@@ -240,7 +261,10 @@ async function loadProducts() {
 
                         name:
                             String(
-                                value(1, 'Без названия')
+                                value(
+                                    1,
+                                    'Без названия'
+                                )
                             ),
 
                         price:
@@ -250,7 +274,10 @@ async function loadProducts() {
 
                         category:
                             String(
-                                value(3, 'items')
+                                value(
+                                    3,
+                                    'items'
+                                )
                             )
                                 .trim()
                                 .toLowerCase(),
@@ -260,25 +287,21 @@ async function loadProducts() {
                                 value(4, '')
                             ),
 
-                        // F
                         image:
                             String(
                                 value(5, '')
                             ).trim(),
 
-                        // G
                         image2:
                             String(
                                 value(6, '')
                             ).trim(),
 
-                        // H
                         image3:
                             String(
                                 value(7, '')
                             ).trim(),
 
-                        // I
                         image4:
                             String(
                                 value(8, '')
@@ -295,6 +318,8 @@ async function loadProducts() {
 
         render();
 
+        updateCartButton();
+
 
     } catch (error) {
 
@@ -309,32 +334,343 @@ async function loadProducts() {
 
 
 // ==================================================
+// РАБОТА С КОРЗИНОЙ
+// ==================================================
+
+function getCartItem(id) {
+
+    return cart.find(
+        item =>
+            String(item.id) === String(id)
+    );
+}
+
+
+function getCartQuantity(id) {
+
+    const item =
+        getCartItem(id);
+
+    return item
+        ? item.count
+        : 0;
+}
+
+
+function setCartQuantity(id, quantity) {
+
+    const product =
+        products.find(
+            item =>
+                String(item.id) === String(id)
+        );
+
+
+    if (!product) return;
+
+
+    quantity =
+        Math.max(
+            0,
+            Number(quantity) || 0
+        );
+
+
+    const index =
+        cart.findIndex(
+            item =>
+                String(item.id) === String(id)
+        );
+
+
+    // Если количество стало 0 —
+    // полностью убираем товар.
+    if (quantity <= 0) {
+
+        if (index !== -1) {
+
+            cart.splice(
+                index,
+                1
+            );
+        }
+
+    } else {
+
+        if (index !== -1) {
+
+            cart[index].count =
+                quantity;
+
+        } else {
+
+            cart.push({
+                ...product,
+                count: quantity
+            });
+        }
+    }
+
+
+    updateCartButton();
+
+    updateProductCard(id);
+}
+
+
+function addToCart(id) {
+
+    const current =
+        getCartQuantity(id);
+
+
+    setCartQuantity(
+        id,
+        current + 1
+    );
+
+
+    animateCart();
+}
+
+
+function removeFromCart(id) {
+
+    const current =
+        getCartQuantity(id);
+
+
+    setCartQuantity(
+        id,
+        current - 1
+    );
+}
+
+
+function updateCartButton() {
+
+    const count =
+        cart.reduce(
+            (sum, item) =>
+                sum + item.count,
+            0
+        );
+
+
+    const button =
+        document.getElementById(
+            'cart-btn'
+        );
+
+
+    const countEl =
+        document.getElementById(
+            'cart-count'
+        );
+
+
+    if (countEl) {
+
+        countEl.innerText =
+            count;
+    }
+
+
+    if (button) {
+
+        button.classList.toggle(
+            'cart-empty',
+            count === 0
+        );
+
+        button.classList.toggle(
+            'cart-has-items',
+            count > 0
+        );
+    }
+}
+
+
+// ==================================================
+// ОБНОВЛЕНИЕ КНОПКИ НА КАРТОЧКЕ
+// ==================================================
+
+function getCardButtonHtml(product) {
+
+    const quantity =
+        getCartQuantity(product.id);
+
+
+    if (quantity <= 0) {
+
+        return `
+            <button
+                type="button"
+                class="card-cart-btn"
+                onclick="
+                    event.stopPropagation();
+                    addToCart(${JSON.stringify(product.id)});
+                "
+            >
+                В корзину
+            </button>
+        `;
+    }
+
+
+    return `
+        <div
+            class="card-quantity"
+            onclick="event.stopPropagation();"
+        >
+
+            <button
+                type="button"
+                class="card-quantity-btn"
+                onclick="
+                    event.stopPropagation();
+                    removeFromCart(${JSON.stringify(product.id)});
+                "
+                aria-label="Уменьшить количество"
+            >
+                −
+            </button>
+
+
+            <span class="card-quantity-value">
+                ${quantity}
+            </span>
+
+
+            <button
+                type="button"
+                class="card-quantity-btn"
+                onclick="
+                    event.stopPropagation();
+                    addToCart(${JSON.stringify(product.id)});
+                "
+                aria-label="Увеличить количество"
+            >
+                +
+            </button>
+
+        </div>
+    `;
+}
+
+
+function updateProductCard(id) {
+
+    const card =
+        document.querySelector(
+            `.product-card[data-product-id="${CSS.escape(String(id))}"]`
+        );
+
+
+    if (!card) return;
+
+
+    const buttonArea =
+        card.querySelector(
+            '.card-button-area'
+        );
+
+
+    if (!buttonArea) return;
+
+
+    const product =
+        products.find(
+            item =>
+                String(item.id) === String(id)
+        );
+
+
+    if (!product) return;
+
+
+    buttonArea.innerHTML =
+        getCardButtonHtml(product);
+}
+
+
+// ==================================================
+// АНИМАЦИЯ КОРЗИНЫ
+// ==================================================
+
+function animateCart() {
+
+    const button =
+        document.getElementById(
+            'cart-btn'
+        );
+
+
+    if (!button) return;
+
+
+    button.classList.remove(
+        'cart-pulse'
+    );
+
+
+    // Перезапускаем animation
+    void button.offsetWidth;
+
+
+    button.classList.add(
+        'cart-pulse'
+    );
+
+
+    setTimeout(() => {
+
+        button.classList.remove(
+            'cart-pulse'
+        );
+
+    }, 450);
+}
+
+
+// ==================================================
 // ОТРИСОВКА ТОВАРОВ
 // ==================================================
 
 function render() {
 
     const container =
-        document.getElementById('products');
+        document.getElementById(
+            'products'
+        );
+
 
     if (!container) return;
 
 
     const searchEl =
-        document.getElementById('search');
+        document.getElementById(
+            'search'
+        );
+
 
     const sortEl =
-        document.getElementById('sort');
+        document.getElementById(
+            'sort'
+        );
 
 
     const searchTxt =
-        (searchEl?.value || '')
+        (
+            searchEl?.value || ''
+        )
             .trim()
             .toLowerCase();
 
 
     const sortBy =
-        sortEl?.value || 'default';
+        sortEl?.value ||
+        'default';
 
 
     let filtered =
@@ -343,7 +679,8 @@ function render() {
 
                 return (
                     currentCategory === 'all' ||
-                    product.category === currentCategory
+                    product.category ===
+                    currentCategory
                 );
             })
             .filter(product => {
@@ -365,7 +702,8 @@ function render() {
     if (sortBy === 'low') {
 
         filtered.sort(
-            (a, b) => a.price - b.price
+            (a, b) =>
+                a.price - b.price
         );
     }
 
@@ -373,7 +711,8 @@ function render() {
     if (sortBy === 'high') {
 
         filtered.sort(
-            (a, b) => b.price - a.price
+            (a, b) =>
+                b.price - a.price
         );
     }
 
@@ -392,7 +731,9 @@ function render() {
             .map(product => {
 
                 const images =
-                    getProductImages(product);
+                    getProductImages(
+                        product
+                    );
 
 
                 let imagesHtml = '';
@@ -402,16 +743,25 @@ function render() {
 
                     imagesHtml = `
                         <div class="product-gallery">
+
                             ${images
                                 .map(src => `
                                     <img
-                                        src="${escapeHtml(getImageUrl(src))}"
+                                        src="${escapeHtml(
+                                            getImageUrl(src)
+                                        )}"
                                         class="gallery-img"
-                                        alt="${escapeHtml(product.name)}"
-                                        onerror="this.onerror=null; this.src='images/placeholder.jpg';"
+                                        alt="${escapeHtml(
+                                            product.name
+                                        )}"
+                                        onerror="
+                                            this.onerror=null;
+                                            this.src='images/placeholder.jpg';
+                                        "
                                     >
                                 `)
                                 .join('')}
+
                         </div>
                     `;
 
@@ -419,7 +769,9 @@ function render() {
 
                     const src =
                         images.length
-                            ? getImageUrl(images[0])
+                            ? getImageUrl(
+                                images[0]
+                            )
                             : 'images/placeholder.jpg';
 
 
@@ -427,8 +779,13 @@ function render() {
                         <img
                             src="${escapeHtml(src)}"
                             class="main-img"
-                            alt="${escapeHtml(product.name)}"
-                            onerror="this.onerror=null; this.src='images/placeholder.jpg';"
+                            alt="${escapeHtml(
+                                product.name
+                            )}"
+                            onerror="
+                                this.onerror=null;
+                                this.src='images/placeholder.jpg';
+                            "
                         >
                     `;
                 }
@@ -437,27 +794,40 @@ function render() {
                 return `
                     <div
                         class="product-card"
-                        onclick="openProductModal(${JSON.stringify(product.id)})"
+                        data-product-id="${escapeHtml(
+                            String(product.id)
+                        )}"
+                        onclick="
+                            openProductModal(
+                                ${JSON.stringify(product.id)}
+                            )
+                        "
                     >
 
                         ${imagesHtml}
 
+
                         <h4>
-                            ${escapeHtml(product.name)}
+                            ${escapeHtml(
+                                product.name
+                            )}
                         </h4>
 
-                        <p style="margin:5px 0;">
+
+                        <p class="product-card-price">
                             <b>
-                                ${formatPrice(product.price)} ₽
+                                ${formatPrice(
+                                    product.price
+                                )} ₽
                             </b>
                         </p>
 
-                        <button
-                            type="button"
-                            onclick="event.stopPropagation(); addToCart(${JSON.stringify(product.id)})"
-                        >
-                            В корзину
-                        </button>
+
+                        <div class="card-button-area">
+                            ${getCardButtonHtml(
+                                product
+                            )}
+                        </div>
 
                     </div>
                 `;
@@ -472,18 +842,25 @@ function render() {
 
 function filterCategory(cat, button) {
 
-    currentCategory = cat;
+    currentCategory =
+        cat;
 
 
     document
         .querySelectorAll('.cat-btn')
         .forEach(btn => {
-            btn.classList.remove('active');
+
+            btn.classList.remove(
+                'active'
+            );
         });
 
 
     if (button) {
-        button.classList.add('active');
+
+        button.classList.add(
+            'active'
+        );
     }
 
 
@@ -492,82 +869,35 @@ function filterCategory(cat, button) {
 
 
 // ==================================================
-// КОРЗИНА
+// КОРЗИНА — ОКНО
 // ==================================================
-
-function addToCart(id) {
-
-    const product =
-        products.find(
-            item =>
-                String(item.id) === String(id)
-        );
-
-
-    if (!product) return;
-
-
-    const inCart =
-        cart.find(
-            item =>
-                String(item.id) === String(id)
-        );
-
-
-    if (inCart) {
-
-        inCart.count++;
-
-    } else {
-
-        cart.push({
-            ...product,
-            count: 1
-        });
-    }
-
-
-    updateCartButton();
-}
-
-
-function updateCartButton() {
-
-    const count =
-        cart.reduce(
-            (sum, item) =>
-                sum + item.count,
-            0
-        );
-
-
-    const el =
-        document.getElementById('cart-count');
-
-
-    if (el) {
-        el.innerText = count;
-    }
-}
-
 
 function toggleCart() {
 
     const modal =
-        document.getElementById('cart-modal');
+        document.getElementById(
+            'cart-modal'
+        );
+
 
     if (!modal) return;
 
 
-    if (modal.style.display === 'block') {
+    if (
+        modal.style.display ===
+        'block'
+    ) {
 
-        modal.style.display = 'none';
+        modal.style.display =
+            'none';
 
         return;
     }
 
 
-    modal.style.display = 'block';
+    modal.style.display =
+        'block';
+
 
     renderCart();
 }
@@ -576,7 +906,10 @@ function toggleCart() {
 function renderCart() {
 
     const itemsDiv =
-        document.getElementById('cart-items');
+        document.getElementById(
+            'cart-items'
+        );
+
 
     if (!itemsDiv) return;
 
@@ -584,103 +917,124 @@ function renderCart() {
     let total = 0;
 
 
-    itemsDiv.innerHTML =
-        cart
-            .map((item, index) => {
+    if (!cart.length) {
 
-                total +=
-                    item.price *
-                    item.count;
+        itemsDiv.innerHTML = `
+            <div class="empty-cart">
+                Корзина пока пуста
+            </div>
+        `;
 
+    } else {
 
-                return `
-                    <div
-                        class="cart-item"
-                        data-index="${index}"
-                        style="margin-bottom:15px;"
-                    >
+        itemsDiv.innerHTML =
+            cart
+                .map((item, index) => {
 
-                        <div style="margin-bottom:8px;">
-                            <b>
-                                ${escapeHtml(item.name)}
-                            </b>
-                        </div>
+                    total +=
+                        item.price *
+                        item.count;
 
 
+                    return `
                         <div
-                            style="
-                                display:flex;
-                                align-items:center;
-                                gap:10px;
-                            "
+                            class="cart-item"
+                            data-index="${index}"
+                            style="margin-bottom:15px;"
                         >
 
-                            <button
-                                type="button"
-                                class="cart-minus"
-                                data-index="${index}"
+                            <div
+                                style="margin-bottom:8px;"
+                            >
+                                <b>
+                                    ${escapeHtml(
+                                        item.name
+                                    )}
+                                </b>
+                            </div>
+
+
+                            <div
                                 style="
-                                    width:40px;
-                                    height:36px;
+                                    display:flex;
+                                    align-items:center;
+                                    gap:10px;
                                 "
                             >
-                                −
-                            </button>
+
+                                <button
+                                    type="button"
+                                    class="cart-minus"
+                                    data-index="${index}"
+                                    style="
+                                        width:40px;
+                                        height:36px;
+                                    "
+                                >
+                                    −
+                                </button>
 
 
-                            <span
-                                style="
-                                    min-width:20px;
-                                    text-align:center;
-                                "
-                            >
-                                ${item.count}
-                            </span>
+                                <span
+                                    style="
+                                        min-width:20px;
+                                        text-align:center;
+                                    "
+                                >
+                                    ${item.count}
+                                </span>
 
 
-                            <button
-                                type="button"
-                                class="cart-plus"
-                                data-index="${index}"
-                                style="
-                                    width:40px;
-                                    height:36px;
-                                "
-                            >
-                                +
-                            </button>
+                                <button
+                                    type="button"
+                                    class="cart-plus"
+                                    data-index="${index}"
+                                    style="
+                                        width:40px;
+                                        height:36px;
+                                    "
+                                >
+                                    +
+                                </button>
 
 
-                            <span style="margin-left:auto;">
-                                ${formatPrice(
-                                    item.price *
-                                    item.count
-                                )} ₽
-                            </span>
+                                <span
+                                    style="
+                                        margin-left:auto;
+                                    "
+                                >
+                                    ${formatPrice(
+                                        item.price *
+                                        item.count
+                                    )} ₽
+                                </span>
 
 
-                            <button
-                                type="button"
-                                class="cart-remove"
-                                data-index="${index}"
-                                style="
-                                    width:40px;
-                                    height:36px;
-                                "
-                            >
-                                🗑️
-                            </button>
+                                <button
+                                    type="button"
+                                    class="cart-remove"
+                                    data-index="${index}"
+                                    style="
+                                        width:40px;
+                                        height:36px;
+                                    "
+                                >
+                                    🗑️
+                                </button>
+
+                            </div>
 
                         </div>
-
-                    </div>
-                `;
-            })
-            .join('');
+                    `;
+                })
+                .join('');
+    }
 
 
     const totalEl =
-        document.getElementById('cart-total');
+        document.getElementById(
+            'cart-total'
+        );
 
 
     if (totalEl) {
@@ -698,7 +1052,9 @@ function renderCart() {
     // ------------------------------
 
     itemsDiv
-        .querySelectorAll('.cart-minus')
+        .querySelectorAll(
+            '.cart-minus'
+        )
         .forEach(button => {
 
             button.addEventListener(
@@ -711,21 +1067,15 @@ function renderCart() {
                         );
 
 
-                    if (!cart[index]) return;
-
-
-                    cart[index].count--;
-
-
-                    if (
-                        cart[index].count <= 0
-                    ) {
-
-                        cart.splice(
-                            index,
-                            1
-                        );
+                    if (!cart[index]) {
+                        return;
                     }
+
+
+                    setCartQuantity(
+                        cart[index].id,
+                        cart[index].count - 1
+                    );
 
 
                     renderCart();
@@ -739,7 +1089,9 @@ function renderCart() {
     // ------------------------------
 
     itemsDiv
-        .querySelectorAll('.cart-plus')
+        .querySelectorAll(
+            '.cart-plus'
+        )
         .forEach(button => {
 
             button.addEventListener(
@@ -752,10 +1104,15 @@ function renderCart() {
                         );
 
 
-                    if (!cart[index]) return;
+                    if (!cart[index]) {
+                        return;
+                    }
 
 
-                    cart[index].count++;
+                    setCartQuantity(
+                        cart[index].id,
+                        cart[index].count + 1
+                    );
 
 
                     renderCart();
@@ -769,7 +1126,9 @@ function renderCart() {
     // ------------------------------
 
     itemsDiv
-        .querySelectorAll('.cart-remove')
+        .querySelectorAll(
+            '.cart-remove'
+        )
         .forEach(button => {
 
             button.addEventListener(
@@ -782,12 +1141,14 @@ function renderCart() {
                         );
 
 
-                    if (!cart[index]) return;
+                    if (!cart[index]) {
+                        return;
+                    }
 
 
-                    cart.splice(
-                        index,
-                        1
+                    setCartQuantity(
+                        cart[index].id,
+                        0
                     );
 
 
@@ -807,7 +1168,8 @@ function openProductModal(id) {
     const product =
         products.find(
             item =>
-                String(item.id) === String(id)
+                String(item.id) ===
+                String(id)
         );
 
 
@@ -815,7 +1177,9 @@ function openProductModal(id) {
 
 
     const modal =
-        document.getElementById('product-modal');
+        document.getElementById(
+            'product-modal'
+        );
 
 
     const content =
@@ -824,11 +1188,15 @@ function openProductModal(id) {
         );
 
 
-    if (!modal || !content) return;
+    if (!modal || !content) {
+        return;
+    }
 
 
     const images =
-        getProductImages(product);
+        getProductImages(
+            product
+        );
 
 
     const imagesHtml =
@@ -839,9 +1207,16 @@ function openProductModal(id) {
                     ${images
                         .map(src => `
                             <img
-                                src="${escapeHtml(getImageUrl(src))}"
-                                alt="${escapeHtml(product.name)}"
-                                onerror="this.onerror=null; this.src='images/placeholder.jpg';"
+                                src="${escapeHtml(
+                                    getImageUrl(src)
+                                )}"
+                                alt="${escapeHtml(
+                                    product.name
+                                )}"
+                                onerror="
+                                    this.onerror=null;
+                                    this.src='images/placeholder.jpg';
+                                "
                             >
                         `)
                         .join('')}
@@ -851,23 +1226,35 @@ function openProductModal(id) {
             : '';
 
 
+    const currentQuantity =
+        getCartQuantity(
+            product.id
+        );
+
+
     content.innerHTML = `
 
         ${imagesHtml}
 
 
         <h2 class="product-modal-title">
-            ${escapeHtml(product.name)}
+            ${escapeHtml(
+                product.name
+            )}
         </h2>
 
 
         <div class="product-modal-description">
-            ${escapeHtml(product.description)}
+            ${escapeHtml(
+                product.description
+            )}
         </div>
 
 
         <div class="product-modal-price">
-            ${formatPrice(product.price)} ₽
+            ${formatPrice(
+                product.price
+            )} ₽
         </div>
 
 
@@ -875,20 +1262,30 @@ function openProductModal(id) {
 
             <button
                 type="button"
-                onclick="changeProductQuantity(-1)"
+                onclick="
+                    changeProductQuantity(
+                        ${JSON.stringify(product.id)},
+                        -1
+                    )
+                "
             >
                 −
             </button>
 
 
             <span id="product-quantity-value">
-                1
+                ${currentQuantity || 1}
             </span>
 
 
             <button
                 type="button"
-                onclick="changeProductQuantity(1)"
+                onclick="
+                    changeProductQuantity(
+                        ${JSON.stringify(product.id)},
+                        1
+                    )
+                "
             >
                 +
             </button>
@@ -899,15 +1296,22 @@ function openProductModal(id) {
         <button
             type="button"
             class="product-add-btn"
-            onclick="addProductToCartFromModal(${JSON.stringify(product.id)})"
+            onclick="
+                addProductToCartFromModal(
+                    ${JSON.stringify(product.id)}
+                )
+            "
         >
-            В корзину
+            ${currentQuantity > 0
+                ? 'Добавить ещё'
+                : 'В корзину'}
         </button>
 
     `;
 
 
-    modal.style.display = 'block';
+    modal.style.display =
+        'block';
 }
 
 
@@ -921,12 +1325,47 @@ function closeProductModal() {
 
     if (modal) {
 
-        modal.style.display = 'none';
+        modal.style.display =
+            'none';
     }
 }
 
 
-function changeProductQuantity(delta) {
+function changeProductQuantity(
+    id,
+    delta
+) {
+
+    const current =
+        getCartQuantity(id);
+
+
+    let quantity;
+
+
+    // Если товара ещё нет,
+    // минус оставляет 0,
+    // плюс делает 1.
+    if (current === 0) {
+
+        quantity =
+            Math.max(
+                0,
+                delta
+            );
+
+    } else {
+
+        quantity =
+            current + delta;
+    }
+
+
+    setCartQuantity(
+        id,
+        quantity
+    );
+
 
     const quantityEl =
         document.getElementById(
@@ -934,79 +1373,52 @@ function changeProductQuantity(delta) {
         );
 
 
-    if (!quantityEl) return;
+    if (quantityEl) {
 
-
-    let quantity =
-        Number(
-            quantityEl.innerText
-        ) || 1;
-
-
-    quantity += delta;
-
-
-    if (quantity < 1) {
-
-        quantity = 1;
+        quantityEl.innerText =
+            quantity > 0
+                ? quantity
+                : 0;
     }
 
 
-    quantityEl.innerText =
-        quantity;
+    // Если уменьшили до нуля —
+    // закрываем карточку.
+    if (quantity <= 0) {
+
+        closeProductModal();
+
+        return;
+    }
+
+
+    const addButton =
+        document.querySelector(
+            '.product-add-btn'
+        );
+
+
+    if (addButton) {
+
+        addButton.innerText =
+            'Добавить ещё';
+    }
 }
 
 
 function addProductToCartFromModal(id) {
 
-    const product =
-        products.find(
-            item =>
-                String(item.id) === String(id)
-        );
+    const current =
+        getCartQuantity(id);
 
 
-    if (!product) return;
+    setCartQuantity(
+        id,
+        current + 1
+    );
 
 
-    const quantityEl =
-        document.getElementById(
-            'product-quantity-value'
-        );
-
-
-    const quantity =
-        Math.max(
-            1,
-            Number(
-                quantityEl?.innerText
-            ) || 1
-        );
-
-
-    const inCart =
-        cart.find(
-            item =>
-                String(item.id) === String(id)
-        );
-
-
-    if (inCart) {
-
-        inCart.count += quantity;
-
-    } else {
-
-        cart.push({
-            ...product,
-            count: quantity
-        });
-    }
-
-
-    updateCartButton();
-
-    closeProductModal();
+    animateCart();
 }
 
 
