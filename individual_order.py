@@ -135,10 +135,21 @@ def handle_no_phone(bot, chat_id, message, orders_db):
     return True
 
 
-def _dispatch(bot, message, orders_db):
+def _is_relevant(message, orders_db):
     order = orders_db.get(message.chat.id)
     if not order or not order.get("individual_order") or order.get("completed"):
         return False
+    if message.content_type == "contact" and order.get("waiting_contact"):
+        return True
+    if message.content_type == "text":
+        return bool(order.get("waiting_individual_description") or order.get("waiting_individual_media_choice") or (order.get("waiting_individual_media") and message.text == SKIP_MEDIA_TEXT) or (order.get("waiting_contact") and message.text == "💬 Не отправлять номер, связаться в ТГ"))
+    if message.content_type in ("photo", "document"):
+        return bool(order.get("waiting_individual_media"))
+    return False
+
+
+def _dispatch(bot, message, orders_db):
+    order = orders_db.get(message.chat.id)
     if message.content_type == "contact" and order.get("waiting_contact"):
         return handle_contact(bot, message.chat.id, message, orders_db)
     if message.content_type == "text":
@@ -163,7 +174,7 @@ def _register_dispatcher(bot, orders_db):
         return
     def dispatcher(message):
         return _dispatch(bot, message, orders_db)
-    bot.register_message_handler(dispatcher, content_types=["text", "photo", "document", "contact"], func=lambda message: _dispatch(bot, message, orders_db))
+    bot.register_message_handler(dispatcher, content_types=["text", "photo", "document", "contact"], func=lambda message: _is_relevant(message, orders_db))
     bot.message_handlers.insert(0, bot.message_handlers.pop())
     bot._individual_order_dispatcher = True
 
