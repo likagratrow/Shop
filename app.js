@@ -6,6 +6,9 @@ const SHEET_ID = '1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk';
 const SHEET_URL =
     `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
 
+const STOCK_API_URL =
+    'https://script.google.com/macros/s/AKfycbwwkQeC1U82T0LoYv9umYrc-pmeD0KSZP0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg/exec';
+
 const tg = window.Telegram?.WebApp;
 
 if (tg) {
@@ -35,6 +38,39 @@ function escapeHtml(value) {
 function formatPrice(value) {
     return new Intl.NumberFormat('ru-RU')
         .format(Number(value) || 0);
+}
+
+
+function parseBalance(value) {
+    const text = String(value ?? '').trim();
+
+    if (
+        text === '∞' ||
+        text.toLowerCase() === 'infinity'
+    ) {
+        return Infinity;
+    }
+
+    const number = Number(text);
+
+    if (!Number.isInteger(number) || number < 0) {
+        return 0;
+    }
+
+    return number;
+}
+
+
+function getStockText(product) {
+    if (product.balance === Infinity) {
+        return 'В наличии';
+    }
+
+    if (product.balance <= 0) {
+        return 'Нет в наличии';
+    }
+
+    return `В наличии: ${product.balance} шт.`;
 }
 
 
@@ -272,6 +308,11 @@ async function loadProducts() {
                                 value(2, 0)
                             ) || 0,
 
+                        balance:
+                            parseBalance(
+                                value(3, 0)
+                            ),
+
                         category:
                             String(
                                 value(
@@ -376,6 +417,16 @@ function setCartQuantity(id, quantity) {
         );
 
 
+    if (
+        product.balance !== Infinity
+    ) {
+        quantity = Math.min(
+            quantity,
+            product.balance
+        );
+    }
+
+
     const index =
         cart.findIndex(
             item =>
@@ -420,9 +471,23 @@ function setCartQuantity(id, quantity) {
 
 function addToCart(id) {
 
+    const product =
+        products.find(
+            item =>
+                String(item.id) === String(id)
+        );
+
+    if (!product) return;
+
     const current =
         getCartQuantity(id);
 
+    if (
+        product.balance !== Infinity &&
+        current >= product.balance
+    ) {
+        return;
+    }
 
     setCartQuantity(
         id,
@@ -501,6 +566,19 @@ function getCardButtonHtml(product) {
         getCartQuantity(product.id);
 
 
+    if (product.balance <= 0) {
+        return `
+            <button
+                type="button"
+                class="card-cart-btn"
+                disabled
+            >
+                Нет в наличии
+            </button>
+        `;
+    }
+
+
     if (quantity <= 0) {
 
         return `
@@ -516,6 +594,11 @@ function getCardButtonHtml(product) {
             </button>
         `;
     }
+
+
+    const plusDisabled =
+        product.balance !== Infinity &&
+        quantity >= product.balance;
 
 
     return `
@@ -545,6 +628,7 @@ function getCardButtonHtml(product) {
             <button
                 type="button"
                 class="card-quantity-btn"
+                ${plusDisabled ? 'disabled' : ''}
                 onclick="
                     event.stopPropagation();
                     addToCart(${JSON.stringify(product.id)});
@@ -823,6 +907,13 @@ function render() {
                         </p>
 
 
+                        <p class="product-card-stock">
+                            ${escapeHtml(
+                                getStockText(product)
+                            )}
+                        </p>
+
+
                         <div class="card-button-area">
                             ${getCardButtonHtml(
                                 product
@@ -936,6 +1027,11 @@ function renderCart() {
                         item.count;
 
 
+                    const plusDisabled =
+                        item.balance !== Infinity &&
+                        item.count >= item.balance;
+
+
                     return `
                         <div
                             class="cart-item"
@@ -989,6 +1085,7 @@ function renderCart() {
                                     type="button"
                                     class="cart-plus"
                                     data-index="${index}"
+                                    ${plusDisabled ? 'disabled' : ''}
                                     style="
                                         width:40px;
                                         height:36px;
@@ -1109,9 +1206,8 @@ function renderCart() {
                     }
 
 
-                    setCartQuantity(
-                        cart[index].id,
-                        cart[index].count + 1
+                    addToCart(
+                        cart[index].id
                     );
 
 
@@ -1231,6 +1327,17 @@ function openProductModal(id) {
             product.id
         );
 
+    const displayedQuantity =
+        currentQuantity > 0
+            ? currentQuantity
+            : product.balance > 0
+                ? 1
+                : 0;
+
+    const plusDisabled =
+        product.balance !== Infinity &&
+        displayedQuantity >= product.balance;
+
 
     content.innerHTML = `
 
@@ -1258,6 +1365,13 @@ function openProductModal(id) {
         </div>
 
 
+        <div class="product-modal-stock">
+            ${escapeHtml(
+                getStockText(product)
+            )}
+        </div>
+
+
         <div class="product-quantity">
 
             <button
@@ -1274,12 +1388,13 @@ function openProductModal(id) {
 
 
             <span id="product-quantity-value">
-                ${currentQuantity || 1}
+                ${displayedQuantity}
             </span>
 
 
             <button
                 type="button"
+                ${plusDisabled || product.balance <= 0 ? 'disabled' : ''}
                 onclick="
                     changeProductQuantity(
                         ${JSON.stringify(product.id)},
@@ -1296,15 +1411,18 @@ function openProductModal(id) {
         <button
             type="button"
             class="product-add-btn"
+            ${product.balance <= 0 ? 'disabled' : ''}
             onclick="
                 addProductToCartFromModal(
                     ${JSON.stringify(product.id)}
                 )
             "
         >
-            ${currentQuantity > 0
-                ? 'Добавить ещё'
-                : 'В корзину'}
+            ${product.balance <= 0
+                ? 'Нет в наличии'
+                : currentQuantity > 0
+                    ? 'Добавить ещё'
+                    : 'В корзину'}
         </button>
 
     `;
@@ -1336,6 +1454,14 @@ function changeProductQuantity(
     delta
 ) {
 
+    const product =
+        products.find(
+            item =>
+                String(item.id) === String(id)
+        );
+
+    if (!product) return;
+
     const current =
         getCartQuantity(id);
 
@@ -1358,6 +1484,16 @@ function changeProductQuantity(
 
         quantity =
             current + delta;
+    }
+
+
+    if (
+        product.balance !== Infinity
+    ) {
+        quantity = Math.min(
+            quantity,
+            product.balance
+        );
     }
 
 
@@ -1403,6 +1539,19 @@ function changeProductQuantity(
         addButton.innerText =
             'Добавить ещё';
     }
+
+
+    const plusButton =
+        document.querySelector(
+            '.product-quantity button:last-child'
+        );
+
+
+    if (plusButton) {
+        plusButton.disabled =
+            product.balance !== Infinity &&
+            quantity >= product.balance;
+    }
 }
 
 
@@ -1411,14 +1560,42 @@ function addProductToCartFromModal(id) {
     const current =
         getCartQuantity(id);
 
-
-    setCartQuantity(
-        id,
-        current + 1
-    );
+    addToCart(id);
 
 
-    animateCart();
+    const quantityEl =
+        document.getElementById(
+            'product-quantity-value'
+        );
+
+    if (quantityEl) {
+        quantityEl.innerText =
+            getCartQuantity(id) || 0;
+    }
+
+    const product =
+        products.find(
+            item =>
+                String(item.id) === String(id)
+        );
+
+    if (product) {
+        const addButton =
+            document.querySelector(
+                '.product-add-btn'
+            );
+
+        if (addButton) {
+            addButton.innerText =
+                'Добавить ещё';
+            addButton.disabled =
+                product.balance <= 0 ||
+                (
+                    product.balance !== Infinity &&
+                    getCartQuantity(id) >= product.balance
+                );
+        }
+    }
 }
 
 
@@ -1453,6 +1630,10 @@ function sendOrder() {
     const payload =
         JSON.stringify({
             items: itemsText,
+            products: cart.map(item => ({
+                id: item.id,
+                quantity: item.count
+            })),
             total: total
         });
 
