@@ -6,11 +6,6 @@ import telebot
 
 from config import BOT_TOKEN
 
-try:
-    from config import STOCK_API_SECRET
-except ImportError:
-    STOCK_API_SECRET = ""
-
 
 # =========================
 # НАСТРОЙКИ
@@ -310,12 +305,8 @@ def decrement_stock(order):
     if not products:
         return False, "В заказе отсутствует список товаров."
 
-    if not STOCK_API_SECRET:
-        return False, "Не настроен секрет для управления остатками."
-
     payload = json.dumps(
         {
-            "secret": STOCK_API_SECRET,
             "action": "check_and_decrement",
             "items": products
         },
