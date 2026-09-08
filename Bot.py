@@ -107,7 +107,7 @@ def request_contact(chat_id, text=None, reason=None):
     if reason:
         order["contact_reason"] = reason
     if text is None:
-        text = "Оставьте пожалуйста контакт, в рабочее время мы с вами свяжемся и оформим заказ!"
+        text = "Спасибо! Для завершения оформления заказа отправьте номер телефона или, если удобнее, свяжемся через Telegram"
     bot.send_message(chat_id, text, reply_markup=contact_keyboard())
 
 
@@ -502,10 +502,9 @@ def wait_manager(call):
         print("Не удалось убрать кнопки оплаты:", edit_error)
     bot.send_message(
         chat_id,
-        "Хорошо 😊\n\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.",
-        reply_markup=shop_keyboard()
+        "Хорошо 😊\n\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18."
     )
-    send_owner_notification(chat_id)
+    request_contact(chat_id)
 
 
 @bot.message_handler(content_types=["contact"])
