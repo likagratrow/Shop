@@ -56,10 +56,13 @@ def handle_contact_choice(bot, chat_id, choice, orders_db, first_name, username)
     return True
 
 
+def _is_relevant(message, orders_db):
+    order = orders_db.get(message.chat.id)
+    return bool(order and order.get("feedback") and not order.get("completed") and message.content_type == "text" and (order.get("waiting_feedback") or order.get("waiting_feedback_contact_choice")))
+
+
 def _dispatch(bot, message, orders_db):
     order = orders_db.get(message.chat.id)
-    if not order or not order.get("feedback") or order.get("completed") or message.content_type != "text":
-        return False
     if order.get("waiting_feedback"):
         return handle_feedback(bot, message.chat.id, message.text, orders_db)
     if order.get("waiting_feedback_contact_choice"):
@@ -72,7 +75,7 @@ def _register_dispatcher(bot, orders_db):
         return
     def dispatcher(message):
         return _dispatch(bot, message, orders_db)
-    bot.register_message_handler(dispatcher, content_types=["text"], func=lambda message: _dispatch(bot, message, orders_db))
+    bot.register_message_handler(dispatcher, content_types=["text"], func=lambda message: _is_relevant(message, orders_db))
     bot.message_handlers.insert(0, bot.message_handlers.pop())
     bot._reviews_dispatcher = True
 
