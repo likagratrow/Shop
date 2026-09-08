@@ -53,9 +53,7 @@ if (categoriesEl) {
                 event.preventDefault();
                 event.stopPropagation();
                 searchCategoryFilter = null;
-                if (searchEl) {
-                    currentCategory = 'all';
-                }
+                currentCategory = 'all';
                 updateCategoryFilterState();
                 render();
             });
@@ -111,7 +109,7 @@ const searchEl = document.getElementById('search');
 
 function updateCategoryFilterState() {
     if (!categoriesEl) return;
-    const hasSearch = Boolean(searchEl?.value.trim());
+    const hasSearch = Boolean(document.getElementById('search')?.value.trim());
     categoriesEl.classList.toggle('searching', hasSearch);
     categoriesEl.querySelectorAll('.cat-btn').forEach(button => {
         const onclick = button.getAttribute('onclick') || '';
