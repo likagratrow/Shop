@@ -1,0 +1,126 @@
+name: Patch delivery loader
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch Bot.py
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("Bot.py")
+          text = path.read_text(encoding="utf-8")
+
+          if "import csv\n" not in text:
+              text = text.replace(
+                  "import json\n",
+                  "import csv\nimport io\nimport json\n",
+                  1
+              )
+
+          old_url = '''DELIVERY_SHEET_URL = (
+              f"https://docs.google.com/spreadsheets/d/"
+              f"{SHEET_ID}/gviz/tq"
+              f"?sheet=%D0%94%D0%BE%D1%81%D1%82%D0%B0%D0%B2%D0%BA%D0%B0"
+          )'''
+
+          new_url = '''DELIVERY_SHEET_URL = (
+              f"https://docs.google.com/spreadsheets/d/"
+              f"{SHEET_ID}/export?format=csv&gid=1790260732"
+          )'''
+
+          if old_url not in text:
+              raise SystemExit("Не найден старый DELIVERY_SHEET_URL")
+
+          text = text.replace(old_url, new_url, 1)
+
+          start = text.index("def load_delivery_options():")
+          end = text.index("\n\n# =========================\n# КЛАВИАТУРА ДОСТАВКИ", start)
+
+          new_function = '''def load_delivery_options():
+              options = []
+
+              try:
+                  with urllib.request.urlopen(
+                      DELIVERY_SHEET_URL,
+                      timeout=10
+                  ) as response:
+                      text = response.read().decode("utf-8-sig")
+
+                  reader = csv.reader(
+                      io.StringIO(text)
+                  )
+
+                  rows = list(reader)
+
+                  for row in rows[1:]:
+                      if len(row) < 3:
+                          continue
+
+                      delivery_id = row[0].strip()
+                      title = row[1].strip()
+                      price_raw = row[2].strip()
+
+                      if not delivery_id or not title:
+                          continue
+
+                      price = None
+
+                      if price_raw:
+                          try:
+                              price = float(
+                                  price_raw
+                                  .replace(" ", "")
+                                  .replace(",", ".")
+                                  .replace("₽", "")
+                              )
+
+                              if price.is_integer():
+                                  price = int(price)
+
+                          except Exception:
+                              price = None
+
+                      options.append(
+                          {
+                              "id": delivery_id,
+                              "title": title,
+                              "price": price
+                          }
+                      )
+
+                  return options
+
+              except Exception as error:
+                  print(
+                      "Ошибка загрузки доставки:",
+                      error
+                  )
+
+                  return []
+'''
+
+          text = text[:start] + new_function + text[end:]
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Commit final change and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Bot.py
+          git rm .github/workflows/patch-delivery-loader.yml
+          git commit -m "fix: read delivery options via CSV export"
+          git push
