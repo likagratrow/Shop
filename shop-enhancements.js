@@ -9,6 +9,7 @@ const CATEGORY_SHEET_URL =
 
 const categoryDescriptions = {};
 const originalProductsOrder = [];
+let searchCategoryFilter = null;
 
 const enhancementStyle = document.createElement('style');
 enhancementStyle.textContent = `
@@ -117,6 +118,15 @@ const originalFilterCategory = filterCategory;
 
 filterCategory = function(category, button) {
 
+    const hasSearch =
+        Boolean(
+            document.getElementById('search')?.value.trim()
+        );
+
+    if (hasSearch) {
+        searchCategoryFilter = category;
+    }
+
     originalFilterCategory(category, button);
     updateCategoryDescription(category);
 };
@@ -178,7 +188,7 @@ async function loadCategoryDescriptions() {
 
 
 // ==================================================
-// ПОИСК — КНОПКА ОЧИСТКИ
+// ПОИСК — КНОПКА ОЧИСТКИ + ПОИСК ПО ВСЕМУ КАТАЛОГУ
 // ==================================================
 
 const searchEl = document.getElementById('search');
@@ -200,6 +210,7 @@ if (searchEl) {
 
     clearButton.addEventListener('click', () => {
         searchEl.value = '';
+        searchCategoryFilter = null;
         clearButton.hidden = true;
         render();
         searchEl.focus();
@@ -209,8 +220,42 @@ if (searchEl) {
 
     searchEl.addEventListener('input', () => {
         clearButton.hidden = !searchEl.value;
+        searchCategoryFilter = null;
+        render();
     });
 }
+
+
+// ==================================================
+// Поиск: без текста — выбранная категория.
+// С текстом — весь каталог.
+// После нажатия категории во время поиска —
+// поиск остаётся, а категория становится вторым фильтром.
+// ==================================================
+
+const originalRender = render;
+
+render = function() {
+
+    const searchValue =
+        document.getElementById('search')?.value.trim();
+
+    if (searchValue) {
+
+        const savedCategory = currentCategory;
+
+        currentCategory =
+            searchCategoryFilter || 'all';
+
+        originalRender();
+
+        currentCategory = savedCategory;
+        return;
+    }
+
+    searchCategoryFilter = null;
+    originalRender();
+};
 
 
 // ==================================================
