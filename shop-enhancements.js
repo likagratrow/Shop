@@ -19,9 +19,9 @@ enhancementStyle.textContent = `
     .search-clear { position: absolute; top: 50%; right: 8px; width: 28px; height: 28px; transform: translateY(-50%); border: none; background: transparent; color: #888; font-size: 22px; line-height: 28px; padding: 0; cursor: pointer; }
     .search-clear[hidden] { display: none; }
     .cat-btn { position: relative; min-width: 92px; padding-left: 14px; padding-right: 14px; }
-    .categories:not(.searching) .cat-btn:not(.active) { background: rgba(36, 129, 204, 0.18) !important; color: #000 !important; }
-    .categories.searching .cat-btn { background: rgba(36, 129, 204, 0.18) !important; color: #000 !important; }
-    .categories.searching .cat-btn.active { background: rgba(36, 129, 204, 0.18) !important; color: #000 !important; }
+    .categories:not(.searching) .cat-btn:not(.active) { background: rgba(36, 129, 204, 0.18) !important; color: #fff !important; }
+    .categories.searching .cat-btn { background: rgba(36, 129, 204, 0.18) !important; color: #fff !important; }
+    .categories.searching .cat-btn.active { background: rgba(36, 129, 204, 0.18) !important; color: #fff !important; }
     .categories.searching .cat-btn.category-filter-active { background: var(--tg-theme-button-color, #2481cc) !important; color: var(--tg-theme-button-text-color, #fff) !important; }
     .cat-btn .category-clear { display: none; margin-left: 8px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: currentColor; font-size: 20px; line-height: 18px; vertical-align: middle; cursor: pointer; }
     .cat-btn.category-filter-active .category-clear { display: inline-block; }
