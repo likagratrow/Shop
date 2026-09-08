@@ -1,8 +1,8 @@
 const SHEET_ID = '1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk';
 
 // Берём данные из таблицы.
-// F:I — ссылки на фотографии.
-// J:M — картинки внутри Google Таблиц, сайту они не нужны.
+// G:J — ссылки на фотографии.
+// K:N — картинки внутри Google Таблиц, сайту они не нужны.
 const SHEET_URL =
     `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
 
@@ -275,7 +275,7 @@ async function loadProducts() {
                         category:
                             String(
                                 value(
-                                    3,
+                                    4,
                                     'items'
                                 )
                             )
@@ -284,27 +284,27 @@ async function loadProducts() {
 
                         description:
                             String(
-                                value(4, '')
+                                value(5, '')
                             ),
 
                         image:
                             String(
-                                value(5, '')
+                                value(6, '')
                             ).trim(),
 
                         image2:
                             String(
-                                value(6, '')
+                                value(7, '')
                             ).trim(),
 
                         image3:
                             String(
-                                value(7, '')
+                                value(8, '')
                             ).trim(),
 
                         image4:
                             String(
-                                value(8, '')
+                                value(9, '')
                             ).trim()
                     };
                 });
