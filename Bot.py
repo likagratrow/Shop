@@ -111,6 +111,27 @@ def request_contact(chat_id, text=None, reason=None):
     bot.send_message(chat_id, text, reply_markup=contact_keyboard())
 
 
+def send_final_order_message(chat_id):
+    order = orders_db.get(chat_id)
+    if not order:
+        return
+
+    if order.get("delivery_id") == "courier_ekb":
+        text = (
+            "Спасибо!\n\n"
+            "Всё-всё записал и передал менеджеру) Сборка заказа обычно занимает один рабочий день, "
+            "затем мы с вами свяжемся и обрадуем, что готовы организовать доставку. Спасибо за заказ!"
+        )
+    else:
+        text = (
+            "Спасибо!\n\n"
+            "Всё-всё записал и передал менеджеру) Сборка заказа обычно занимает один рабочий день, "
+            "затем мы с вами свяжемся и обрадуем, что можно забрать (или что он отправлен). Спасибо за заказ!"
+        )
+
+    bot.send_message(chat_id, text, reply_markup=shop_keyboard())
+
+
 def send_owner_notification(chat_id):
     order = orders_db.get(chat_id)
     if not order or order.get("completed"):
@@ -355,7 +376,7 @@ def handle_web_app_data(message):
 
     options = load_delivery_options()
     if not options:
-        request_contact(chat_id, "Не удалось загрузить варианты доставки. Оставьте пожалуйста контакт, в рабочее время мы с вами свяжемся и оформим заказ!", "Не удалось загрузить варианты доставки")
+        request_contact(chat_id, "Не удалось загрузить варианты доставки. Оставьте контакт, в рабочее время мы с вами свяжемся и оформим заказ!", "Не удалось загрузить варианты доставки")
         return
 
     orders_db[chat_id]["waiting_delivery"] = True
@@ -462,8 +483,8 @@ def paid(call):
         bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
     except Exception as edit_error:
         print("Не удалось убрать кнопки оплаты:", edit_error)
-    bot.send_message(chat_id, "Спасибо! 💳\n\nОплата отмечена. Заказ принят в работу.")
-    send_owner_notification(chat_id)
+
+    request_contact(chat_id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "wait_manager")
@@ -490,21 +511,29 @@ def wait_manager(call):
 @bot.message_handler(content_types=["contact"])
 def handle_contact(message):
     chat_id = message.chat.id
-    order = orders_db.setdefault(chat_id, {})
+    order = orders_db.get(chat_id)
+    if not order:
+        return
     order["phone"] = message.contact.phone_number
     order["waiting_contact"] = False
     if order.get("paid_status") or order.get("waiting_manager") or order.get("contact_required"):
         send_owner_notification(chat_id)
+    if order.get("paid_status"):
+        send_final_order_message(chat_id)
 
 
 @bot.message_handler(func=lambda message: message.text == "💬 Не отправлять номер, связаться в ТГ")
 def no_phone(message):
     chat_id = message.chat.id
-    order = orders_db.setdefault(chat_id, {})
+    order = orders_db.get(chat_id)
+    if not order:
+        return
     order["waiting_contact"] = False
     order["phone"] = None
     if order.get("paid_status") or order.get("waiting_manager") or order.get("contact_required"):
         send_owner_notification(chat_id)
+    if order.get("paid_status"):
+        send_final_order_message(chat_id)
 
 
 @bot.message_handler(func=lambda message: message.text == "🛍 Магазин")
