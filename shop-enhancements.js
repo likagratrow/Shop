@@ -17,14 +17,16 @@ enhancementStyle.textContent = `
     .search-wrap #search { width: 100%; box-sizing: border-box; padding-right: 36px; }
     .search-clear { position: absolute; top: 50%; right: 8px; width: 28px; height: 28px; transform: translateY(-50%); border: none; background: transparent; color: #888; font-size: 22px; line-height: 28px; padding: 0; cursor: pointer; }
     .search-clear[hidden] { display: none; }
-    .categories.searching .cat-btn { background: #eef8ff; color: var(--tg-theme-text-color, #000); }
-    .categories.searching .cat-btn.active { background: #eef8ff; color: var(--tg-theme-text-color, #000); }
-    .categories.searching .cat-btn.category-filter-active { background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); }
     .cat-btn { position: relative; min-width: 92px; padding-left: 14px; padding-right: 14px; }
+    .categories:not(.searching) .cat-btn:not(.active) { background: rgba(36, 129, 204, 0.18) !important; color: #000 !important; }
+    .categories.searching .cat-btn { background: rgba(36, 129, 204, 0.18) !important; color: #000 !important; }
+    .categories.searching .cat-btn.active { background: rgba(36, 129, 204, 0.18) !important; color: #000 !important; }
+    .categories.searching .cat-btn.category-filter-active { background: var(--tg-theme-button-color, #2481cc) !important; color: var(--tg-theme-button-text-color, #fff) !important; }
     .cat-btn .category-clear { display: none; margin-left: 8px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: currentColor; font-size: 20px; line-height: 18px; vertical-align: middle; cursor: pointer; }
     .cat-btn.category-filter-active .category-clear { display: inline-block; }
     .cat-btn.category-filter-active .category-label { display: inline-block; }
     .search-empty-hint { padding: 18px 12px; text-align: center; color: var(--tg-theme-hint-color, #888); font-size: 14px; line-height: 1.45; }
+    .category-empty-hint { padding: 18px 12px; text-align: center; color: var(--tg-theme-hint-color, #888); font-size: 14px; line-height: 1.5; }
 `;
 document.head.appendChild(enhancementStyle);
 
@@ -179,6 +181,15 @@ render = function() {
     searchCategoryFilter = null;
     originalRender();
     updateCategoryFilterState();
+    const productContainer = document.getElementById('products');
+    if (productContainer && productContainer.querySelector('.empty-products')) {
+        productContainer.innerHTML = `
+            <div class="category-empty-hint">
+                В этой категории пока что все товары на фотосессии (они немного стесняются 😶‍🌫️).<br>
+                Пожалуйста, посмотрите пока в других категориях.
+            </div>
+        `;
+    }
 };
 
 const sortEl = document.getElementById('sort');
