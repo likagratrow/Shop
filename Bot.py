@@ -6,6 +6,11 @@ import telebot
 
 from config import BOT_TOKEN
 
+try:
+    from config import STOCK_API_SECRET
+except ImportError:
+    STOCK_API_SECRET = ""
+
 
 # =========================
 # НАСТРОЙКИ
@@ -16,6 +21,12 @@ YOUR_TELEGRAM_ID = 5219493908
 WEB_APP_URL = "https://likagratrow.github.io/Shop/"
 
 SHEET_ID = "1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk"
+
+STOCK_API_URL = (
+    "https://script.google.com/macros/s/"
+    "AKfycbwwkQeC1U82T0LoYv9umYrc-pmeD0KSZP0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg"
+    "/exec"
+)
 
 DELIVERY_SHEET_URL = (
     f"https://docs.google.com/spreadsheets/d/"
@@ -284,6 +295,68 @@ def format_price(value):
 
     except Exception:
         return f"{value} ₽"
+
+
+# =========================
+# ПРОВЕРКА И СПИСАНИЕ ОСТАТКОВ
+# =========================
+
+def decrement_stock(order):
+    products = order.get(
+        "products",
+        []
+    )
+
+    if not products:
+        return False, "В заказе отсутствует список товаров."
+
+    if not STOCK_API_SECRET:
+        return False, "Не настроен секрет для управления остатками."
+
+    payload = json.dumps(
+        {
+            "secret": STOCK_API_SECRET,
+            "action": "check_and_decrement",
+            "items": products
+        },
+        ensure_ascii=False
+    ).encode("utf-8")
+
+    request = urllib.request.Request(
+        STOCK_API_URL,
+        data=payload,
+        headers={
+            "Content-Type": "application/json"
+        },
+        method="POST"
+    )
+
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=15
+        ) as response:
+            text = response.read().decode(
+                "utf-8"
+            )
+
+        result = json.loads(text)
+
+        if result.get("ok"):
+            return True, None
+
+        return False, result.get(
+            "error",
+            "Не удалось обновить остатки."
+        )
+
+    except Exception as error:
+        print(
+            "Ошибка списания остатков:",
+            error
+        )
+
+        return False, "Не удалось связаться с системой остатков."
 
 
 # =========================
@@ -572,6 +645,14 @@ def handle_web_app_data(message):
         )
     ).strip()
 
+    products = data.get(
+        "products",
+        []
+    )
+
+    if not isinstance(products, list):
+        products = []
+
     total = data.get(
         "total",
         0
@@ -591,6 +672,7 @@ def handle_web_app_data(message):
 
     orders_db[chat_id] = {
         "items": items,
+        "products": products,
         "product_total": total,
         "total": total,
         "needs_delivery": needs_delivery,
@@ -895,7 +977,55 @@ def paid(call):
         )
         return
 
+    if order.get("paid_status") == "paid":
+        bot.answer_callback_query(
+            call.id,
+            "Заказ уже отмечен как оплаченный."
+        )
+        return
+
+    stock_ok, stock_error = decrement_stock(
+        order
+    )
+
+    if not stock_ok:
+        bot.answer_callback_query(
+            call.id,
+            "Не удалось подтвердить заказ."
+        )
+
+        if stock_error == "Not enough stock":
+            message_text = (
+                "К сожалению, нужного количества товара уже нет в наличии. "
+                "Пожалуйста, оформите заказ заново с актуальным количеством."
+            )
+        else:
+            message_text = (
+                "К сожалению, сейчас не удалось подтвердить наличие товара. "
+                "Пожалуйста, попробуйте оформить заказ ещё раз."
+            )
+
+        bot.send_message(
+            chat_id,
+            message_text,
+            reply_markup=shop_keyboard()
+        )
+
+        return
+
     order["paid_status"] = "paid"
+
+    try:
+        bot.edit_message_reply_markup(
+            chat_id,
+            call.message.message_id,
+            reply_markup=None
+        )
+    except Exception as edit_error:
+        print(
+            "Не удалось убрать кнопки оплаты:",
+            edit_error
+        )
 
     bot.answer_callback_query(
         call.id,
