@@ -15,7 +15,7 @@ YOUR_TELEGRAM_ID = 5219493908
 
 WEB_APP_URL = "https://likagratrow.github.io/Shop/"
 
-SHEET_ID = "1QwKqA5yKrEZrU2jDZk94lnQgWV9AG2mo1hwvnWgOkSU"
+SHEET_ID = "1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk"
 
 DELIVERY_SHEET_URL = (
     f"https://docs.google.com/spreadsheets/d/"
@@ -1000,7 +1000,7 @@ def handle_contact(message):
 )
 def no_phone(message):
     chat_id = message.chat.id
-
+    
     order = orders_db.get(
         chat_id
     )
