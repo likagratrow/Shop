@@ -1,19 +1,20 @@
 """Логика кнопки «🧵 Индивидуальный заказ»."""
 
+from telebot import types
+
 INDIVIDUAL_ORDER_PROMPT = "Опишите, что бы вы хотели заказать?"
 MEDIA_PROMPT = "Есть ли у вас картинки, наброски или референсы?"
 CONTACT_PROMPT = "Спасибо! Всё передал мастеру. Для связи оставьте Telegram или, если удобнее, номер телефона 😊"
 SKIP_MEDIA_TEXT = "Пропустить"
 
 
-def _media_keyboard(types):
+def _media_keyboard():
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     keyboard.row(types.KeyboardButton(SKIP_MEDIA_TEXT))
     return keyboard
 
 
 def start(bot, chat_id, orders_db):
-    """Начать оформление индивидуального заказа."""
     order = orders_db.setdefault(chat_id, {})
     order.clear()
     order["individual_order"] = True
@@ -39,7 +40,7 @@ def handle_media_choice(bot, chat_id, choice, orders_db):
     if choice == "Да":
         order["waiting_individual_media_choice"] = False
         order["waiting_individual_media"] = True
-        bot.send_message(chat_id, "Пришлите картинки, наброски или референсы. Можно отправить несколько файлов. Когда закончите — нажмите «Пропустить».", reply_markup=_media_keyboard(types))
+        bot.send_message(chat_id, "Пришлите картинки, наброски или референсы. Можно отправить несколько файлов. Когда закончите — нажмите «Пропустить».", reply_markup=_media_keyboard())
         return True
     if choice == "Нет":
         order["waiting_individual_media_choice"] = False
@@ -48,7 +49,7 @@ def handle_media_choice(bot, chat_id, choice, orders_db):
     return False
 
 
-def handle_photo(bot, chat_id, message, orders_db):
+def handle_photo(bot, message, orders_db):
     order = orders_db.get(message.chat.id)
     if not order or not order.get("waiting_individual_media"):
         return False
@@ -56,7 +57,7 @@ def handle_photo(bot, chat_id, message, orders_db):
     return True
 
 
-def handle_document(bot, chat_id, message, orders_db):
+def handle_document(bot, message, orders_db):
     order = orders_db.get(message.chat.id)
     if not order or not order.get("waiting_individual_media"):
         return False
@@ -83,6 +84,14 @@ def start_contact(bot, chat_id, orders_db):
     bot.send_message(chat_id, CONTACT_PROMPT, reply_markup=keyboard)
 
 
+def _shop_keyboard():
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.row(types.KeyboardButton("🛍 Магазин"), types.KeyboardButton("📅 Записаться"))
+    keyboard.row(types.KeyboardButton("🧵 Индивидуальный заказ"))
+    keyboard.row(types.KeyboardButton("💬 Обратная связь"))
+    return keyboard
+
+
 def _finish(bot, chat_id, orders_db, owner_id, phone=None):
     order = orders_db.get(chat_id)
     if not order:
@@ -90,10 +99,9 @@ def _finish(bot, chat_id, orders_db, owner_id, phone=None):
     order["phone"] = phone
     order["waiting_contact"] = False
     order["individual_contact"] = False
+    order["contact_required"] = False
     description = order.get("individual_description", "")
     username = order.get("username")
-    if not username:
-        username = None
     owner_text = "🧵 НОВЫЙ ИНДИВИДУАЛЬНЫЙ ЗАКАЗ\n\n"
     owner_text += f"📝 Описание:\n{description}\n\n"
     owner_text += f"👤 Клиент: {order.get('first_name') or ''}\n"
@@ -111,7 +119,7 @@ def _finish(bot, chat_id, orders_db, owner_id, phone=None):
         except Exception as error:
             print("Не удалось передать референс:", error)
     bot.send_message(chat_id, "Спасибо! Всё передал мастеру. Мы свяжемся с вами в рабочее время Пн–Пт, 10:00–18:00 (Екатеринбург). 😊", reply_markup=types.ReplyKeyboardRemove())
-    bot.send_message(chat_id, "Выберите, что хотите сделать.", reply_markup=_shop_keyboard(types))
+    bot.send_message(chat_id, "Выберите, что хотите сделать.", reply_markup=_shop_keyboard())
     order["completed"] = True
 
 
@@ -133,11 +141,3 @@ def handle_no_phone(bot, chat_id, message, orders_db, owner_id):
     order["username"] = message.from_user.username
     _finish(bot, chat_id, orders_db, owner_id, None)
     return True
-
-
-def _shop_keyboard(types):
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("🛍 Магазин"), types.KeyboardButton("📅 Записаться"))
-    keyboard.row(types.KeyboardButton("🧵 Индивидуальный заказ"))
-    keyboard.row(types.KeyboardButton("💬 Обратная связь"))
-    return keyboard
