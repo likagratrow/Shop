@@ -1,11 +1,21 @@
 """Логика кнопки «🧵 Индивидуальный заказ»."""
 
+import sys
 from telebot import types
 
 INDIVIDUAL_ORDER_PROMPT = "Опишите, что бы вы хотели заказать?"
 MEDIA_PROMPT = "Есть ли у вас картинки, наброски или референсы?"
 CONTACT_PROMPT = "Спасибо! Для связи оставьте Telegram или, если удобнее, номер телефона 😊"
 SKIP_MEDIA_TEXT = "Пропустить"
+
+
+def _owner_id():
+    main = sys.modules.get("__main__")
+    owner_id = getattr(main, "YOUR_TELEGRAM_ID", None)
+    if owner_id is not None:
+        return owner_id
+    from Bot import YOUR_TELEGRAM_ID
+    return YOUR_TELEGRAM_ID
 
 
 def _media_keyboard():
@@ -26,7 +36,7 @@ def _finish(bot, chat_id, orders_db, phone=None):
     order = orders_db.get(chat_id)
     if not order:
         return
-    from Bot import YOUR_TELEGRAM_ID
+    owner_id = _owner_id()
     order["phone"] = phone
     order["waiting_contact"] = False
     order["individual_contact"] = False
@@ -40,13 +50,13 @@ def _finish(bot, chat_id, orders_db, phone=None):
     owner_text += f"📱 Телефон: {phone}\n" if phone else "📱 Телефон: не предоставлен\n"
     media = order.get("individual_media", [])
     owner_text += f"\n📎 Референсов: {len(media)}"
-    bot.send_message(YOUR_TELEGRAM_ID, owner_text)
+    bot.send_message(owner_id, owner_text)
     for item in media:
         try:
             if item["type"] == "photo":
-                bot.send_photo(YOUR_TELEGRAM_ID, item["file_id"])
+                bot.send_photo(owner_id, item["file_id"])
             else:
-                bot.send_document(YOUR_TELEGRAM_ID, item["file_id"])
+                bot.send_document(owner_id, item["file_id"])
         except Exception as error:
             print("Не удалось передать референс:", error)
     bot.send_message(chat_id, "Спасибо! Всё передал мастеру. Мы свяжемся с вами в рабочее время Пн–Пт, 10:00–18:00 (Екатеринбург). 😊", reply_markup=types.ReplyKeyboardRemove())
