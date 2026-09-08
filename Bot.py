@@ -334,7 +334,7 @@ def handle_web_app_data(message):
         data = json.loads(message.web_app_data.data)
     except Exception as error:
         print("Ошибка разбора данных Mini App:", error)
-        request_contact(chat_id, "Не удалось прочитать заказ. Оставьте пожалуйста контакт, в рабочее время мы с вами свяжемся и оформим заказ!", "Не удалось прочитать заказ")
+        request_contact(chat_id, "Не удалось прочитать заказ. Спасибо! Для завершения оформления заказа отправьте номер телефона или, если удобнее, свяжемся через Telegram", "Не удалось прочитать заказ")
         return
 
     products = data.get("products", [])
@@ -376,7 +376,7 @@ def handle_web_app_data(message):
 
     options = load_delivery_options()
     if not options:
-        request_contact(chat_id, "Не удалось загрузить варианты доставки. Оставьте контакт, в рабочее время мы с вами свяжемся и оформим заказ!", "Не удалось загрузить варианты доставки")
+        request_contact(chat_id, "Не удалось загрузить варианты доставки. Спасибо! Для завершения оформления заказа отправьте номер телефона или, если удобнее, свяжемся через Telegram", "Не удалось загрузить варианты доставки")
         return
 
     orders_db[chat_id]["waiting_delivery"] = True
@@ -471,9 +471,9 @@ def paid(call):
     if not stock_ok:
         bot.answer_callback_query(call.id, "Не удалось подтвердить наличие товара.", show_alert=True)
         if stock_error == "Не удалось связаться с системой остатков.":
-            error_text = "Не удалось связаться с системой остатков. Оставьте контакт, в рабочее время мы с вами свяжемся и оформим заказ!"
+            error_text = "Не удалось связаться с системой остатков. Спасибо! Для завершения оформления заказа отправьте номер телефона или, если удобнее, свяжемся через Telegram"
         else:
-            error_text = "⚠️ Не удалось подтвердить наличие товара.\n\nОставьте пожалуйста контакт, в рабочее время мы с вами свяжемся и оформим заказ!"
+            error_text = "⚠️ Не удалось подтвердить наличие товара.\n\nСпасибо! Для завершения оформления заказа отправьте номер телефона или, если удобнее, свяжемся через Telegram"
         request_contact(chat_id, error_text, stock_error)
         return
 
@@ -500,10 +500,6 @@ def wait_manager(call):
         bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
     except Exception as edit_error:
         print("Не удалось убрать кнопки оплаты:", edit_error)
-    bot.send_message(
-        chat_id,
-        "Хорошо 😊\n\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18."
-    )
     request_contact(chat_id)
 
 
@@ -519,6 +515,12 @@ def handle_contact(message):
         send_owner_notification(chat_id)
     if order.get("paid_status"):
         send_final_order_message(chat_id)
+    elif order.get("waiting_manager"):
+        bot.send_message(
+            chat_id,
+            "Хорошо 😊\n\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.",
+            reply_markup=shop_keyboard()
+        )
 
 
 @bot.message_handler(func=lambda message: message.text == "💬 Не отправлять номер, связаться в ТГ")
@@ -533,6 +535,12 @@ def no_phone(message):
         send_owner_notification(chat_id)
     if order.get("paid_status"):
         send_final_order_message(chat_id)
+    elif order.get("waiting_manager"):
+        bot.send_message(
+            chat_id,
+            "Хорошо 😊\n\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.",
+            reply_markup=shop_keyboard()
+        )
 
 
 @bot.message_handler(func=lambda message: message.text == "🛍 Магазин")
