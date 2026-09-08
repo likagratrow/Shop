@@ -1,11 +1,21 @@
 """Логика кнопки «💬 Обратная связь»."""
 
+import sys
 from telebot import types
 
 FEEDBACK_PROMPT = "Чем бы вы хотели поделиться?"
 CONTACT_QUESTION = "Хотите, чтобы мы связались с вами по этому поводу?"
 YES_TEXT = "💬 Да, связаться в ТГ"
 NO_TEXT = "Нет"
+
+
+def _owner_id():
+    main = sys.modules.get("__main__")
+    owner_id = getattr(main, "YOUR_TELEGRAM_ID", None)
+    if owner_id is not None:
+        return owner_id
+    from Bot import YOUR_TELEGRAM_ID
+    return YOUR_TELEGRAM_ID
 
 
 def _choice_keyboard():
@@ -39,7 +49,7 @@ def handle_contact_choice(bot, chat_id, choice, orders_db, first_name, username)
         return False
     if choice not in (YES_TEXT, NO_TEXT):
         return False
-    from Bot import YOUR_TELEGRAM_ID
+    owner_id = _owner_id()
     wants_contact = choice == YES_TEXT
     order["waiting_feedback_contact_choice"] = False
     order["feedback_wants_contact"] = wants_contact
@@ -50,7 +60,7 @@ def handle_contact_choice(bot, chat_id, choice, orders_db, first_name, username)
     owner_text += f"👤 Клиент: {first_name or ''}\n"
     owner_text += f"💬 Telegram: @{username}\n" if username else "💬 Telegram: не указан\n"
     owner_text += f"📲 Связаться обратно: {'да' if wants_contact else 'нет'}"
-    bot.send_message(YOUR_TELEGRAM_ID, owner_text)
+    bot.send_message(owner_id, owner_text)
     bot.send_message(chat_id, "Спасибо! Ваше сообщение передано.", reply_markup=_shop_keyboard())
     order["completed"] = True
     return True
