@@ -67,7 +67,10 @@ def shop_keyboard():
     )
 
     keyboard.row(
-        custom_button,
+        custom_button
+    )
+
+    keyboard.row(
         feedback_button
     )
 
@@ -632,8 +635,8 @@ def handle_web_app_data(message):
     if not options:
         bot.send_message(
             chat_id,
-            "Не удалось загрузить варианты доставки. "
-            "Попробуйте оформить заказ ещё раз.",
+            "Извините, не удалось загрузить варианты доставки. "
+            "Пожалуйста, попробуйте оформить заказ ещё раз.",
             reply_markup=shop_keyboard()
         )
         return
