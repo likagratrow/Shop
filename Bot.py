@@ -302,13 +302,65 @@ def decrement_stock(order):
         []
     )
 
-    if not products:
+    if not isinstance(products, list) or not products:
+        print(
+            "Ошибка списания остатков: пустой или некорректный список products",
+            products
+        )
         return False, "В заказе отсутствует список товаров."
+
+    normalized_products = []
+
+    for product in products:
+        if not isinstance(product, dict):
+            print(
+                "Ошибка списания остатков: некорректный товар",
+                product
+            )
+            return False, "Некорректные данные товара."
+
+        product_id = str(
+            product.get("id", "")
+        ).strip()
+
+        quantity = product.get(
+            "quantity"
+        )
+
+        if not product_id:
+            print(
+                "Ошибка списания остатков: у товара отсутствует id",
+                product
+            )
+            return False, "Некорректные данные товара."
+
+        try:
+            quantity = int(quantity)
+        except (TypeError, ValueError):
+            print(
+                "Ошибка списания остатков: некорректное количество",
+                product
+            )
+            return False, "Некорректное количество товара."
+
+        if quantity < 1:
+            print(
+                "Ошибка списания остатков: количество меньше 1",
+                product
+            )
+            return False, "Некорректное количество товара."
+
+        normalized_products.append(
+            {
+                "id": product_id,
+                "quantity": quantity
+            }
+        )
 
     payload = json.dumps(
         {
             "action": "check_and_decrement",
-            "items": products
+            "items": normalized_products
         },
         ensure_ascii=False
     ).encode("utf-8")
@@ -317,7 +369,8 @@ def decrement_stock(order):
         STOCK_API_URL,
         data=payload,
         headers={
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0"
         },
         method="POST"
     )
@@ -367,7 +420,19 @@ def decrement_stock(order):
                 "utf-8"
             )
 
-        result = json.loads(text)
+        try:
+            result = json.loads(text)
+        except json.JSONDecodeError:
+            print(
+                "Ошибка списания остатков: некорректный ответ API:",
+                text
+            )
+            return False, "Система остатков вернула некорректный ответ."
+
+        print(
+            "Ответ системы остатков:",
+            result
+        )
 
         if result.get("ok"):
             return True, None
@@ -377,10 +442,35 @@ def decrement_stock(order):
             "Не удалось обновить остатки."
         )
 
+    except urllib.error.HTTPError as error:
+        try:
+            error_text = error.read().decode(
+                "utf-8",
+                errors="replace"
+            )
+        except Exception:
+            error_text = ""
+
+        print(
+            "HTTP-ошибка списания остатков:",
+            error.code,
+            error_text
+        )
+
+        return False, "Не удалось связаться с системой остатков."
+
+    except urllib.error.URLError as error:
+        print(
+            "Ошибка соединения с системой остатков:",
+            error.reason
+        )
+
+        return False, "Не удалось связаться с системой остатков."
+
     except Exception as error:
         print(
             "Ошибка списания остатков:",
-            error
+            repr(error)
         )
 
         return False, "Не удалось связаться с системой остатков."
