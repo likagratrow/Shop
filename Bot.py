@@ -10,6 +10,7 @@ SHEET_ID = "1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk"
 STOCK_API_URL = "https://script.google.com/macros/s/AKfycbwwkQeC1U82T0LoYv9umYrc-pmeD0KSZP0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg/exec"
 DELIVERY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?sheet=%D0%94%D0%BE%D1%81%D1%82%D0%B0%D0%B2%D0%BA%D0%B0"
 CONTACT_TEXT = "Спасибо! Для завершения оформления заказа отправьте номер телефона или, если удобнее, свяжемся через Telegram"
+REPEAT_CONTACT_TEXT = "Отличный выбор! Чтобы мы могли обсудить детали, оставьте пожалуйста контакты - Telegram или, если удобнее, то номер телефона."
 
 bot = telebot.TeleBot(BOT_TOKEN)
 orders_db = {}
@@ -88,7 +89,7 @@ def send_final_order_message(chat_id):
     order = orders_db.get(chat_id)
     if not order: return
     if order.get("repeat_order"):
-        text = "Спасибо!\n\nМастер свяжется с вами в рабочее время Пн-Пт 10-18."
+        text = "Спасибо!\n\nМастер свяжется с вами в рабочее время Пн-10-18."
     elif order.get("delivery_id") == "courier_ekb":
         text = "Спасибо!\n\nВсё-всё записал и передал менеджеру) Сборка заказа обычно занимает один рабочий день, затем мы с вами свяжемся и обрадуем, что готовы организовать доставку. Спасибо за заказ!"
     else:
@@ -120,9 +121,14 @@ def send_owner_notification(chat_id):
     owner_text += f"\n👤 Клиент: {order.get('first_name') or ''}\n"
     if order.get("username"): owner_text += f"💬 Telegram: @{order['username']}\n"
     owner_text += f"📱 Телефон: {order['phone']}\n" if order.get("phone") else "📱 Телефон: не предоставлен\n"
-    if order.get("contact_reason"): owner_text += f"\n⚠️ Причина обращения: {order['contact_reason']}"
-    elif order.get("waiting_manager"): owner_text += "\n⏳ Клиент ожидает диалога перед оплатой."
-    else: owner_text += "\n💳 Клиент подтвердил оплату."
+    if order.get("repeat_order"):
+        pass
+    elif order.get("contact_reason"):
+        owner_text += f"\n⚠️ Причина обращения: {order['contact_reason']}"
+    elif order.get("waiting_manager"):
+        owner_text += "\n⏳ Клиент ожидает диалога перед оплатой."
+    else:
+        owner_text += "\n💳 Клиент подтвердил оплату."
     bot.send_message(YOUR_TELEGRAM_ID, owner_text, parse_mode="HTML")
 
 
@@ -223,7 +229,9 @@ def handle_web_app_data(message):
     total = data.get("total", 0); needs_delivery = bool(data.get("needs_delivery", False))
     repeat_order = bool(products) and all(isinstance(p, dict) and str(p.get("category", "")).strip().lower() == "repeat" for p in products)
     orders_db[chat_id] = {"items": items, "products": products, "product_total": total, "total": total, "needs_delivery": needs_delivery, "repeat_order": repeat_order, "delivery_id": None, "delivery_title": None, "delivery_price": None, "delivery_service": None, "delivery_address": None, "paid_status": None, "phone": None, "username": message.from_user.username if message.from_user else None, "user_id": message.from_user.id if message.from_user else chat_id, "first_name": message.from_user.first_name if message.from_user else "", "waiting_manager": False, "waiting_contact": False, "waiting_delivery": False, "waiting_delivery_service": False, "waiting_delivery_address": False, "contact_required": False, "completed": False}
-    if repeat_order: request_contact(chat_id); return
+    if repeat_order:
+        request_contact(chat_id, REPEAT_CONTACT_TEXT)
+        return
     if not needs_delivery: send_payment_message(chat_id); return
     start_delivery(chat_id)
 
@@ -317,7 +325,7 @@ def no_phone(message):
         return
     if order.get("paid_status") or order.get("waiting_manager") or order.get("contact_required"): send_owner_notification(chat_id)
     if order.get("paid_status"): send_final_order_message(chat_id)
-    elif order.get("waiting_manager"): bot.send_message(chat_id, "Хорошо 😊\n\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())
+    elif order.get("waiting_manager"): bot.send_message(chat_id, "Хорошо 😊\n\nМенеджер свяжется с вами в рабочее время Пн-10-18.", reply_markup=shop_keyboard())
 
 
 @bot.message_handler(func=lambda message: message.text == "🛍 Магазин")
