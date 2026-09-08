@@ -4,7 +4,7 @@ from telebot import types
 
 INDIVIDUAL_ORDER_PROMPT = "Опишите, что бы вы хотели заказать?"
 MEDIA_PROMPT = "Есть ли у вас картинки, наброски или референсы?"
-CONTACT_PROMPT = "Спасибо! Всё передал мастеру. Для связи оставьте Telegram или, если удобнее, номер телефона 😊"
+CONTACT_PROMPT = "Спасибо! Для связи оставьте Telegram или, если удобнее, номер телефона 😊"
 SKIP_MEDIA_TEXT = "Пропустить"
 
 
@@ -14,13 +14,54 @@ def _media_keyboard():
     return keyboard
 
 
-def start(bot, chat_id, orders_db):
+def _shop_keyboard():
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.row(types.KeyboardButton("🛍 Магазин", web_app=types.WebAppInfo(url="https://likagratrow.github.io/Shop/")), types.KeyboardButton("📅 Записаться"))
+    keyboard.row(types.KeyboardButton("🧵 Индивидуальный заказ"))
+    keyboard.row(types.KeyboardButton("💬 Обратная связь"))
+    return keyboard
+
+
+def _finish(bot, chat_id, orders_db, phone=None):
+    order = orders_db.get(chat_id)
+    if not order:
+        return
+    from Bot import YOUR_TELEGRAM_ID
+    order["phone"] = phone
+    order["waiting_contact"] = False
+    order["individual_contact"] = False
+    order["contact_required"] = False
+    description = order.get("individual_description", "")
+    username = order.get("username")
+    owner_text = "🧵 НОВЫЙ ИНДИВИДУАЛЬНЫЙ ЗАКАЗ\n\n"
+    owner_text += f"📝 Описание:\n{description}\n\n"
+    owner_text += f"👤 Клиент: {order.get('first_name') or ''}\n"
+    owner_text += f"💬 Telegram: @{username}\n" if username else "💬 Telegram: не указан\n"
+    owner_text += f"📱 Телефон: {phone}\n" if phone else "📱 Телефон: не предоставлен\n"
+    media = order.get("individual_media", [])
+    owner_text += f"\n📎 Референсов: {len(media)}"
+    bot.send_message(YOUR_TELEGRAM_ID, owner_text)
+    for item in media:
+        try:
+            if item["type"] == "photo":
+                bot.send_photo(YOUR_TELEGRAM_ID, item["file_id"])
+            else:
+                bot.send_document(YOUR_TELEGRAM_ID, item["file_id"])
+        except Exception as error:
+            print("Не удалось передать референс:", error)
+    bot.send_message(chat_id, "Спасибо! Всё передал мастеру. Мы свяжемся с вами в рабочее время Пн–Пт, 10:00–18:00 (Екатеринбург). 😊", reply_markup=types.ReplyKeyboardRemove())
+    bot.send_message(chat_id, "Выберите, что хотите сделать.", reply_markup=_shop_keyboard())
+    order["completed"] = True
+
+
+def start_contact(bot, chat_id, orders_db):
     order = orders_db.setdefault(chat_id, {})
-    order.clear()
-    order["individual_order"] = True
-    order["waiting_individual_description"] = True
-    order["individual_media"] = []
-    bot.send_message(chat_id, INDIVIDUAL_ORDER_PROMPT)
+    order["waiting_contact"] = True
+    order["individual_contact"] = True
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    keyboard.row(types.KeyboardButton("📱 Отправить номер телефона", request_contact=True))
+    keyboard.row(types.KeyboardButton("💬 Не отправлять номер, связаться в ТГ"))
+    bot.send_message(chat_id, CONTACT_PROMPT, reply_markup=keyboard)
 
 
 def handle_description(bot, chat_id, text, orders_db):
@@ -74,70 +115,64 @@ def skip_media(bot, chat_id, orders_db):
     return True
 
 
-def start_contact(bot, chat_id, orders_db):
-    order = orders_db.setdefault(chat_id, {})
-    order["waiting_contact"] = True
-    order["individual_contact"] = True
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    keyboard.row(types.KeyboardButton("📱 Отправить номер телефона", request_contact=True))
-    keyboard.row(types.KeyboardButton("💬 Не отправлять номер, связаться в ТГ"))
-    bot.send_message(chat_id, CONTACT_PROMPT, reply_markup=keyboard)
-
-
-def _shop_keyboard():
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("🛍 Магазин"), types.KeyboardButton("📅 Записаться"))
-    keyboard.row(types.KeyboardButton("🧵 Индивидуальный заказ"))
-    keyboard.row(types.KeyboardButton("💬 Обратная связь"))
-    return keyboard
-
-
-def _finish(bot, chat_id, orders_db, owner_id, phone=None):
+def handle_contact(bot, chat_id, message, orders_db):
     order = orders_db.get(chat_id)
-    if not order:
+    if not order or not order.get("individual_order") or not order.get("waiting_contact"):
+        return False
+    order["first_name"] = message.from_user.first_name
+    order["username"] = message.from_user.username
+    _finish(bot, chat_id, orders_db, message.contact.phone_number)
+    return True
+
+
+def handle_no_phone(bot, chat_id, message, orders_db):
+    order = orders_db.get(chat_id)
+    if not order or not order.get("individual_order") or not order.get("waiting_contact"):
+        return False
+    order["first_name"] = message.from_user.first_name
+    order["username"] = message.from_user.username
+    _finish(bot, chat_id, orders_db, None)
+    return True
+
+
+def _dispatch(bot, message, orders_db):
+    order = orders_db.get(message.chat.id)
+    if not order or not order.get("individual_order") or order.get("completed"):
+        return False
+    if message.content_type == "contact" and order.get("waiting_contact"):
+        return handle_contact(bot, message.chat.id, message, orders_db)
+    if message.content_type == "text":
+        if order.get("waiting_individual_description"):
+            handle_description(bot, message.chat.id, message.text, orders_db)
+            return True
+        if order.get("waiting_individual_media_choice"):
+            return handle_media_choice(bot, message.chat.id, message.text, orders_db)
+        if order.get("waiting_individual_media") and message.text == SKIP_MEDIA_TEXT:
+            return skip_media(bot, message.chat.id, orders_db)
+        if order.get("waiting_contact") and message.text == "💬 Не отправлять номер, связаться в ТГ":
+            return handle_no_phone(bot, message.chat.id, message, orders_db)
+    if message.content_type == "photo" and order.get("waiting_individual_media"):
+        return handle_photo(bot, message, orders_db)
+    if message.content_type == "document" and order.get("waiting_individual_media"):
+        return handle_document(bot, message, orders_db)
+    return False
+
+
+def _register_dispatcher(bot, orders_db):
+    if getattr(bot, "_individual_order_dispatcher", False):
         return
-    order["phone"] = phone
-    order["waiting_contact"] = False
-    order["individual_contact"] = False
-    order["contact_required"] = False
-    description = order.get("individual_description", "")
-    username = order.get("username")
-    owner_text = "🧵 НОВЫЙ ИНДИВИДУАЛЬНЫЙ ЗАКАЗ\n\n"
-    owner_text += f"📝 Описание:\n{description}\n\n"
-    owner_text += f"👤 Клиент: {order.get('first_name') or ''}\n"
-    owner_text += f"💬 Telegram: @{username}\n" if username else "💬 Telegram: не указан\n"
-    owner_text += f"📱 Телефон: {phone}\n" if phone else "📱 Телефон: не предоставлен\n"
-    media = order.get("individual_media", [])
-    owner_text += f"\n📎 Референсов: {len(media)}"
-    bot.send_message(owner_id, owner_text)
-    for item in media:
-        try:
-            if item["type"] == "photo":
-                bot.send_photo(owner_id, item["file_id"])
-            else:
-                bot.send_document(owner_id, item["file_id"])
-        except Exception as error:
-            print("Не удалось передать референс:", error)
-    bot.send_message(chat_id, "Спасибо! Всё передал мастеру. Мы свяжемся с вами в рабочее время Пн–Пт, 10:00–18:00 (Екатеринбург). 😊", reply_markup=types.ReplyKeyboardRemove())
-    bot.send_message(chat_id, "Выберите, что хотите сделать.", reply_markup=_shop_keyboard())
-    order["completed"] = True
+    def dispatcher(message):
+        return _dispatch(bot, message, orders_db)
+    bot.register_message_handler(dispatcher, content_types=["text", "photo", "document", "contact"], func=lambda message: _dispatch(bot, message, orders_db))
+    bot.message_handlers.insert(0, bot.message_handlers.pop())
+    bot._individual_order_dispatcher = True
 
 
-def handle_contact(bot, chat_id, message, orders_db, owner_id):
-    order = orders_db.get(chat_id)
-    if not order or not order.get("individual_order") or not order.get("waiting_contact"):
-        return False
-    order["first_name"] = message.from_user.first_name
-    order["username"] = message.from_user.username
-    _finish(bot, chat_id, orders_db, owner_id, message.contact.phone_number)
-    return True
-
-
-def handle_no_phone(bot, chat_id, message, orders_db, owner_id):
-    order = orders_db.get(chat_id)
-    if not order or not order.get("individual_order") or not order.get("waiting_contact"):
-        return False
-    order["first_name"] = message.from_user.first_name
-    order["username"] = message.from_user.username
-    _finish(bot, chat_id, orders_db, owner_id, None)
-    return True
+def start(bot, chat_id, orders_db):
+    _register_dispatcher(bot, orders_db)
+    order = orders_db.setdefault(chat_id, {})
+    order.clear()
+    order["individual_order"] = True
+    order["waiting_individual_description"] = True
+    order["individual_media"] = []
+    bot.send_message(chat_id, INDIVIDUAL_ORDER_PROMPT)
