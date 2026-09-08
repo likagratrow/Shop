@@ -2,7 +2,7 @@
 // ДОСТАВКА В ЗАКАЗЕ
 // ==================================================
 // Этот файл только добавляет в payload заказа признак,
-// нужна ли доставка, и категорию каждого товара.
+// нужна ли доставка, и данные каждого товара.
 
 sendOrder = function() {
 
@@ -26,10 +26,10 @@ sendOrder = function() {
             .join(', ');
 
     const needsDelivery =
-        cart.some(
-            item =>
-                String(item.category || '').trim().toLowerCase() === 'items'
-        );
+        cart.some(item => {
+            const category = String(item.category || '').trim().toLowerCase();
+            return category === 'items' || category === 'repeat';
+        });
 
     const payload =
         JSON.stringify({
@@ -37,7 +37,8 @@ sendOrder = function() {
             products: cart.map(item => ({
                 id: item.id,
                 quantity: item.count,
-                category: item.category
+                category: item.category,
+                price: item.price
             })),
             total: total,
             needs_delivery: needsDelivery
