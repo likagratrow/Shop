@@ -3,6 +3,8 @@ import urllib.request
 from telebot import types
 import telebot
 from config import BOT_TOKEN
+import individual_order
+import reviews
 
 YOUR_TELEGRAM_ID = 5219493908
 WEB_APP_URL = "https://likagratrow.github.io/Shop/"
@@ -228,65 +230,76 @@ def start_delivery(chat_id, reason=None):
 
 def after_delivery_step(chat_id):
     order = orders_db.get(chat_id)
-    if order and order.get("repeat_order"):
+    if order and order.get("mixed_order"):
+        request_contact(chat_id, MIXED_CONTACT_TEXT)
+    elif order and order.get("repeat_order"):
         finish_repeat_order(chat_id)
-    else:
-        send_payment_message(chat_id)
+    elif order and (order.get("paid_status") or order.get("waiting_manager")):
+        send_owner_notification(chat_id)
+        if order.get("waiting_manager"):
+            bot.send_message(chat_id, "Хорошо 😊\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())
+        else:
+            send_final_order_message(chat_id)
 
 
 @bot.message_handler(commands=["start"])
 def start(message):
-    orders_db[message.chat.id] = {}
     bot.send_message(message.chat.id, "Добро пожаловать в Странные Вещи.\nВыберите, что хотите сделать.", reply_markup=shop_keyboard())
 
 
 @bot.message_handler(func=lambda message: message.text == "📅 Записаться")
-def handle_booking(message):
-    bot.send_message(message.chat.id, "Вы можете записаться на мастер-класс или Диоген по адресу: https://dikidi.ru/2143045?p=0.pi-si&o=13&s=23280541", reply_markup=types.ReplyKeyboardRemove())
+def booking(message):
+    bot.send_message(message.chat.id, "Вы можете записаться на мастер-класс или Диоген по адресу: https://dikidi.ru/2143045?p=0.pi-si&o=13&s=23280541")
 
 
 @bot.message_handler(func=lambda message: message.text == "🧵 Индивидуальный заказ")
-def handle_custom_order(message):
-    bot.send_message(message.chat.id, "Опишите, что бы вы хотели заказать?", reply_markup=types.ReplyKeyboardRemove())
+def individual_order_handler(message):
+    individual_order.start(bot, message.chat.id, orders_db)
 
 
 @bot.message_handler(func=lambda message: message.text == "💬 Обратная связь")
-def handle_feedback(message):
-    bot.send_message(message.chat.id, "Чем бы вы хотели поделиться?", reply_markup=types.ReplyKeyboardRemove())
+def feedback_handler(message):
+    reviews.start(bot, message.chat.id, orders_db)
 
 
 @bot.message_handler(content_types=["web_app_data"])
-def handle_web_app_data(message):
-    chat_id = message.chat.id
+def web_app_data(message):
     try:
         data = json.loads(message.web_app_data.data)
-        products = data.get("products")
-        total = float(data.get("total", 0) or 0)
-        items = data.get("items", "")
-        needs_delivery = bool(data.get("needs_delivery", False))
+        chat_id = message.chat.id
+        products = data.get("products", [])
         if not isinstance(products, list) or not products:
-            bot.send_message(chat_id, "В заказе отсутствует список товаров.", reply_markup=types.ReplyKeyboardRemove())
+            bot.send_message(chat_id, "В заказе отсутствует список товаров.")
             return
         repeat_products = [p for p in products if isinstance(p, dict) and str(p.get("category", "")).strip().lower() == "repeat"]
         normal_products = [p for p in products if isinstance(p, dict) and str(p.get("category", "")).strip().lower() != "repeat"]
         repeat_order = bool(products) and len(repeat_products) == len(products)
         mixed_order = bool(repeat_products) and bool(normal_products)
+        total = float(data.get("total", 0) or 0)
         repeat_product_total = sum(float(p.get("price", 0) or 0) * int(p.get("quantity", 0) or 0) for p in repeat_products)
         payable_total = total - repeat_product_total if mixed_order else total
         if payable_total < 0: payable_total = 0
-        orders_db[chat_id] = {"items": items, "products": products, "product_total": total, "payable_total": payable_total, "repeat_product_total": repeat_product_total, "total": payable_total, "needs_delivery": needs_delivery, "repeat_order": repeat_order, "mixed_order": mixed_order, "username": message.from_user.username, "first_name": message.from_user.first_name or ""}
+        order = {
+            "items": data.get("items", ""), "products": products, "product_total": total,
+            "payable_total": payable_total, "repeat_product_total": repeat_product_total,
+            "total": payable_total, "needs_delivery": bool(data.get("needs_delivery", False)),
+            "repeat_order": repeat_order, "mixed_order": mixed_order,
+            "username": message.from_user.username, "first_name": message.from_user.first_name,
+            "completed": False,
+        }
+        orders_db[chat_id] = order
         try: bot.delete_message(chat_id, message.message_id)
         except Exception: pass
         if repeat_order:
             request_contact(chat_id, REPEAT_CONTACT_TEXT)
             return
-        if needs_delivery:
+        if order["needs_delivery"]:
             start_delivery(chat_id)
         else:
             send_payment_message(chat_id)
     except Exception as error:
-        print("Ошибка обработки заказа:", repr(error))
-        bot.send_message(chat_id, "Не удалось прочитать заказ. " + CONTACT_TEXT, reply_markup=contact_keyboard())
+        print("Ошибка чтения заказа:", repr(error))
+        bot.send_message(message.chat.id, "Не удалось прочитать заказ.\n\n" + CONTACT_TEXT, reply_markup=contact_keyboard())
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "paid")
@@ -302,18 +315,14 @@ def paid(call):
         return
     ok, error = decrement_stock(order)
     if not ok:
-        try:
-            bot.answer_callback_query(call.id, error or "Не удалось подтвердить наличие товара.")
-        except Exception:
-            pass
+        try: bot.answer_callback_query(call.id, error or "Не удалось подтвердить наличие товара.")
+        except Exception: pass
         bot.send_message(chat_id, ("⚠️ Не удалось подтвердить наличие товара." if error == "Not enough stock" else error) + "\n\n" + CONTACT_TEXT, reply_markup=contact_keyboard())
         order["contact_reason"] = "Не удалось подтвердить наличие товара"
         return
     order["paid_status"] = True
-    try:
-        bot.answer_callback_query(call.id, "Оплата отмечена.")
-    except Exception:
-        pass
+    try: bot.answer_callback_query(call.id, "Оплата отмечена.")
+    except Exception: pass
     request_contact(chat_id, MIXED_CONTACT_TEXT if order.get("mixed_order") else CONTACT_TEXT)
 
 
@@ -325,67 +334,87 @@ def wait_manager(call):
     if not order:
         bot.answer_callback_query(call.id, "Заказ не найден.")
         return
-    if order.get("paid_status"):
-        bot.answer_callback_query(call.id, "Оплата уже отмечена.")
-        return
     order["waiting_manager"] = True
-    request_contact(chat_id, MIXED_CONTACT_TEXT if order.get("mixed_order") else CONTACT_TEXT)
     bot.answer_callback_query(call.id, "Хорошо")
+    request_contact(chat_id, MIXED_CONTACT_TEXT if order.get("mixed_order") else CONTACT_TEXT)
 
 
 @bot.message_handler(content_types=["contact"])
 def handle_contact(message):
     chat_id = message.chat.id
     order = orders_db.get(chat_id)
-    if not order: return
+    if not order or not order.get("waiting_contact"):
+        return
     order["phone"] = message.contact.phone_number
     order["waiting_contact"] = False
-    order["contact_required"] = False
     if order.get("repeat_order"):
         if order.get("needs_delivery"): start_delivery(chat_id)
         else: finish_repeat_order(chat_id)
-    elif order.get("paid_status"):
+        return
+    if order.get("mixed_order"):
         send_owner_notification(chat_id)
-        send_final_order_message(chat_id)
+        if order.get("paid_status"):
+            send_final_order_message(chat_id)
+        elif order.get("waiting_manager"):
+            bot.send_message(chat_id, "Хорошо 😊\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())
+        return
+    if order.get("paid_status"):
+        send_owner_notification(chat_id)
+        if order.get("needs_delivery") and not order.get("delivery_id"):
+            start_delivery(chat_id)
+        else:
+            send_final_order_message(chat_id)
     elif order.get("waiting_manager"):
         send_owner_notification(chat_id)
         bot.send_message(chat_id, "Хорошо 😊\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())
-    elif order.get("contact_reason"):
-        send_owner_notification(chat_id)
-        send_final_order_message(chat_id)
-    else:
-        bot.send_message(chat_id, "Спасибо!", reply_markup=shop_keyboard())
 
 
 @bot.message_handler(func=lambda message: message.text == "💬 Не отправлять номер, связаться в ТГ")
 def no_phone(message):
     chat_id = message.chat.id
     order = orders_db.get(chat_id)
-    if not order: return
+    if not order or not order.get("waiting_contact"):
+        return
+    order["phone"] = None
     order["waiting_contact"] = False
-    order["contact_required"] = False
     if order.get("repeat_order"):
         if order.get("needs_delivery"): start_delivery(chat_id)
         else: finish_repeat_order(chat_id)
-    elif order.get("paid_status"):
+        return
+    if order.get("mixed_order"):
         send_owner_notification(chat_id)
-        send_final_order_message(chat_id)
+        if order.get("paid_status"):
+            send_final_order_message(chat_id)
+        elif order.get("waiting_manager"):
+            bot.send_message(chat_id, "Хорошо 😊\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())
+        return
+    if order.get("paid_status"):
+        send_owner_notification(chat_id)
+        if order.get("needs_delivery") and not order.get("delivery_id"):
+            start_delivery(chat_id)
+        else:
+            send_final_order_message(chat_id)
     elif order.get("waiting_manager"):
         send_owner_notification(chat_id)
         bot.send_message(chat_id, "Хорошо 😊\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())
-    elif order.get("contact_reason"):
-        send_owner_notification(chat_id)
-        send_final_order_message(chat_id)
-    else:
-        bot.send_message(chat_id, "Спасибо!", reply_markup=shop_keyboard())
 
 
 @bot.message_handler(func=lambda message: True)
-def handle_text(message):
+def text_handler(message):
     chat_id = message.chat.id
     order = orders_db.get(chat_id)
-    if not order: return
-    if order.get("waiting_delivery"):
+    if order and order.get("waiting_individual_description"):
+        order["individual_description"] = message.text
+        order["waiting_individual_description"] = False
+        request_contact(chat_id)
+        return
+    if order and order.get("waiting_feedback"):
+        order["feedback_text"] = message.text
+        order["waiting_feedback"] = False
+        bot.send_message(YOUR_TELEGRAM_ID, f"💬 НОВАЯ ОБРАТНАЯ СВЯЗЬ\n\n{message.text}\n\n👤 Клиент: {message.from_user.first_name or ''}\n💬 Telegram: @{message.from_user.username}" if message.from_user.username else f"💬 НОВАЯ ОБРАТНАЯ СВЯЗЬ\n\n{message.text}\n\n👤 Клиент: {message.from_user.first_name or ''}")
+        bot.send_message(chat_id, "Спасибо! Ваше сообщение передано.", reply_markup=shop_keyboard())
+        return
+    if order and order.get("waiting_delivery"):
         options = load_delivery_options()
         selected = next((o for o in options if message.text.startswith(o["title"] + " (")), None)
         if selected:
@@ -394,26 +423,32 @@ def handle_text(message):
             order["delivery_title"] = selected["title"]
             order["delivery_price"] = selected["price"]
             prompt = get_delivery_address_prompt(selected["id"])
-            if prompt:
-                order["waiting_address"] = True
-                bot.send_message(chat_id, prompt, reply_markup=types.ReplyKeyboardRemove())
-            elif selected["id"] == "russia":
-                order["waiting_service"] = True
+            if selected["id"] == "russia":
+                order["waiting_delivery_service"] = True
                 bot.send_message(chat_id, "📦 Выберите службу доставки:", reply_markup=delivery_service_keyboard())
+            elif prompt:
+                order["waiting_delivery_address"] = True
+                bot.send_message(chat_id, prompt, reply_markup=types.ReplyKeyboardRemove())
             else:
-                after_delivery_step(chat_id)
-            return
-    if order.get("waiting_service") and message.text in ("Яндекс", "Ozon", "5Post"):
-        order["waiting_service"] = False
-        order["delivery_service"] = message.text
-        after_delivery_step(chat_id)
+                send_payment_message(chat_id)
         return
-    if order.get("waiting_address"):
-        order["waiting_address"] = False
+    if order and order.get("waiting_delivery_service"):
+        if message.text in ("Яндекс", "Ozon", "5Post"):
+            order["delivery_service"] = message.text
+            order["waiting_delivery_service"] = False
+            order["waiting_delivery_address"] = True
+            bot.send_message(chat_id, "📍 Напишите вручную адрес, куда привезти заказ.\n\nНужен адрес квартиры: улица, дом, квартира 😊", reply_markup=types.ReplyKeyboardRemove())
+        return
+    if order and order.get("waiting_delivery_address"):
         order["delivery_address"] = message.text
-        after_delivery_step(chat_id)
+        order["waiting_delivery_address"] = False
+        if order.get("mixed_order"):
+            request_contact(chat_id, MIXED_CONTACT_TEXT)
+        elif order.get("repeat_order"):
+            finish_repeat_order(chat_id)
+        else:
+            send_payment_message(chat_id)
         return
 
 
-print("Бот запущен")
-bot.infinity_polling(skip_pending=True)
+bot.infinity_polling()
