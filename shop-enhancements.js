@@ -8,6 +8,7 @@ const CATEGORY_SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/g
 const categoryDescriptions = {};
 const originalProductsOrder = [];
 let searchCategoryFilter = null;
+let categoryBeforeSearch = 'items';
 
 const enhancementStyle = document.createElement('style');
 enhancementStyle.textContent = `
@@ -137,14 +138,17 @@ if (searchEl) {
         searchEl.value = '';
         searchCategoryFilter = null;
         clearButton.hidden = true;
-        currentCategory = 'items';
+        currentCategory = categoryBeforeSearch;
         updateCategoryFilterState();
         render();
         searchEl.focus();
     });
     wrapper.appendChild(clearButton);
     searchEl.addEventListener('input', () => {
+        const hadSearch = Boolean(searchEl.value.trim());
+        if (!hadSearch && searchEl.value.trim()) categoryBeforeSearch = currentCategory;
         clearButton.hidden = !searchEl.value;
+        if (!hadSearch && searchEl.value.trim()) categoryBeforeSearch = currentCategory;
         searchCategoryFilter = null;
         updateCategoryFilterState();
         render();
