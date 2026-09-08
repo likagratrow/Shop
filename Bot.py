@@ -7,9 +7,8 @@ from config import BOT_TOKEN
 YOUR_TELEGRAM_ID = 5219493908
 WEB_APP_URL = "https://likagratrow.github.io/Shop/"
 SHEET_ID = "1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk"
-# Exact URL from the known working stock-system commit.
 STOCK_API_URL = "https://script.google.com/macros/s/AKfycbwwkQeC1U82T0LoYv9umYrc-pmeD0KSZP0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg/exec"
-DELIVERY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?sheet=%D0%94%D0%BE%D1%BE%D1%81%D1%82%D0%B0%D0%B2%D0%BA%D0%B0"
+DELIVERY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?sheet=%D0%94%D0%BE%D1%81%D1%82%D0%B0%D0%B2%D0%BA%D0%B0"
 CONTACT_TEXT = "Спасибо! Для завершения оформления заказа отправьте номер телефона или, если удобнее, свяжемся через Telegram"
 REPEAT_CONTACT_TEXT = "Отличный выбор! Чтобы мы могли обсудить детали, оставьте пожалуйста контакты - Telegram или, если удобнее, то номер телефона."
 MIXED_CONTACT_TEXT = "Пожалуйста оставьте контакт (telegram или если удобнее, телефон), и мы свяжемся с вами по поводу изготовления на заказ. Остальные товары будут доставлены как обычно. Спасибо!"
@@ -297,6 +296,7 @@ def paid(call):
     if not ok:
         bot.answer_callback_query(call.id, error or "Не удалось подтвердить наличие товара.")
         bot.send_message(chat_id, ("⚠️ Не удалось подтвердить наличие товара." if error == "Not enough stock" else error) + "\n\n" + CONTACT_TEXT, reply_markup=contact_keyboard())
+        order["contact_reason"] = "Не удалось подтвердить наличие товара"
         return
     order["paid_status"] = True
     if order.get("mixed_order"):
@@ -340,6 +340,9 @@ def handle_contact(message):
     elif order.get("waiting_manager"):
         send_owner_notification(chat_id)
         bot.send_message(chat_id, "Хорошо 😊\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())
+    elif order.get("contact_reason"):
+        send_owner_notification(chat_id)
+        send_final_order_message(chat_id)
     else:
         bot.send_message(chat_id, "Спасибо!", reply_markup=shop_keyboard())
 
@@ -349,7 +352,6 @@ def no_phone(message):
     chat_id = message.chat.id
     order = orders_db.get(chat_id)
     if not order: return
-    bot.send_message(chat_id, "", reply_markup=types.ReplyKeyboardRemove())
     order["waiting_contact"] = False
     order["contact_required"] = False
     if order.get("repeat_order"):
@@ -361,6 +363,9 @@ def no_phone(message):
     elif order.get("waiting_manager"):
         send_owner_notification(chat_id)
         bot.send_message(chat_id, "Хорошо 😊\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())
+    elif order.get("contact_reason"):
+        send_owner_notification(chat_id)
+        send_final_order_message(chat_id)
     else:
         bot.send_message(chat_id, "Спасибо!", reply_markup=shop_keyboard())
 
@@ -386,19 +391,16 @@ def handle_text(message):
                 order["waiting_service"] = True
                 bot.send_message(chat_id, "📦 Выберите службу доставки:", reply_markup=delivery_service_keyboard())
             else:
-                bot.send_message(chat_id, "", reply_markup=types.ReplyKeyboardRemove())
                 send_payment_message(chat_id)
             return
     if order.get("waiting_service") and message.text in ("Яндекс", "Ozon", "5Post"):
         order["waiting_service"] = False
         order["delivery_service"] = message.text
-        bot.send_message(chat_id, "", reply_markup=types.ReplyKeyboardRemove())
         send_payment_message(chat_id)
         return
     if order.get("waiting_address"):
         order["waiting_address"] = False
         order["delivery_address"] = message.text
-        bot.send_message(chat_id, "", reply_markup=types.ReplyKeyboardRemove())
         send_payment_message(chat_id)
         return
 
