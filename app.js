@@ -7,7 +7,7 @@ const SHEET_URL =
     `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
 
 const STOCK_API_URL =
-    'https://script.google.com/macros/s/AKfycbwwkQeC1U82T0LoYv9umYrc-pmeD0KSZP0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg/exec';
+    'https://script.google.com/macros/s/AKfycbwwQkE9C1U82T0LoYv9umYrc-pmeD0KSZP0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg/exec';
 
 const tg = window.Telegram?.WebApp;
 
@@ -1632,7 +1632,9 @@ function sendOrder() {
             items: itemsText,
             products: cart.map(item => ({
                 id: item.id,
-                quantity: item.count
+                quantity: item.count,
+                category: item.category,
+                price: item.price
             })),
             total: total
         });
