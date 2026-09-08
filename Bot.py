@@ -7,144 +7,66 @@ import telebot
 from config import BOT_TOKEN
 
 
-# =========================
-# НАСТРОЙКИ
-# =========================
-
 YOUR_TELEGRAM_ID = 5219493908
-
 WEB_APP_URL = "https://likagratrow.github.io/Shop/"
-
 SHEET_ID = "1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk"
-
 STOCK_API_URL = (
     "https://script.google.com/macros/s/"
     "AKfycbwwkQeC1U82T0LoYv9umYrc-pmeD0KSZP0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg"
     "/exec"
 )
-
 DELIVERY_SHEET_URL = (
-    f"https://docs.google.com/spreadsheets/d/"
-    f"{SHEET_ID}/gviz/tq"
+    f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq"
     f"?sheet=%D0%94%D0%BE%D1%81%D1%82%D0%B0%D0%B2%D0%BA%D0%B0"
 )
 
 bot = telebot.TeleBot(BOT_TOKEN)
-
-
-# =========================
-# ДАННЫЕ ЗАКАЗОВ
-# =========================
-
 orders_db = {}
 
 
-# =========================
-# ОБЩАЯ КЛАВИАТУРА МЕНЮ
-# =========================
-
 def shop_keyboard():
-    keyboard = types.ReplyKeyboardMarkup(
-        resize_keyboard=True
-    )
-
-    shop_button = types.KeyboardButton(
-        "🛍 Магазин",
-        web_app=types.WebAppInfo(
-            url=WEB_APP_URL
-        )
-    )
-
-    booking_button = types.KeyboardButton(
-        "📅 Записаться"
-    )
-
-    custom_button = types.KeyboardButton(
-        "🧵 Индивидуальный заказ"
-    )
-
-    feedback_button = types.KeyboardButton(
-        "💬 Обратная связь"
-    )
-
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.row(
-        shop_button,
-        booking_button
+        types.KeyboardButton("🛍 Магазин", web_app=types.WebAppInfo(url=WEB_APP_URL)),
+        types.KeyboardButton("📅 Записаться")
     )
-
-    keyboard.row(
-        custom_button
-    )
-
-    keyboard.row(
-        feedback_button
-    )
-
+    keyboard.row(types.KeyboardButton("🧵 Индивидуальный заказ"))
+    keyboard.row(types.KeyboardButton("💬 Обратная связь"))
     return keyboard
 
-
-# =========================
-# КЛАВИАТУРА КОНТАКТА
-# =========================
 
 def contact_keyboard():
     keyboard = types.ReplyKeyboardMarkup(
         resize_keyboard=True,
         one_time_keyboard=True
     )
-
-    phone_button = types.KeyboardButton(
-        "📱 Отправить номер телефона",
-        request_contact=True
-    )
-
-    no_phone_button = types.KeyboardButton(
-        "💬 Не отправлять номер, связаться в ТГ"
-    )
-
-    keyboard.row(phone_button)
-    keyboard.row(no_phone_button)
-
+    keyboard.row(types.KeyboardButton("📱 Отправить номер телефона", request_contact=True))
+    keyboard.row(types.KeyboardButton("💬 Не отправлять номер, связаться в ТГ"))
     return keyboard
 
 
-# =========================
-# ЗАГРУЗКА ДОСТАВКИ ИЗ GOOGLE SHEETS
-# =========================
-
 def load_delivery_options():
     options = []
-
     try:
-        with urllib.request.urlopen(
-            DELIVERY_SHEET_URL,
-            timeout=10
-        ) as response:
+        with urllib.request.urlopen(DELIVERY_SHEET_URL, timeout=10) as response:
             text = response.read().decode("utf-8")
 
         start = text.find("{")
         end = text.rfind("}")
-
         if start == -1 or end == -1:
-            raise ValueError(
-                "Не удалось найти JSON в ответе Google Sheets"
-            )
+            raise ValueError("Не удалось найти JSON в ответе Google Sheets")
 
         data = json.loads(text[start:end + 1])
-
         rows = data.get("table", {}).get("rows", [])
 
         for row in rows:
             cells = row.get("c", [])
             values = []
-
             for cell in cells:
                 if cell is None:
                     values.append("")
                 else:
-                    values.append(
-                        str(cell.get("v", "")).strip()
-                    )
+                    values.append(str(cell.get("v", "")).strip())
 
             if len(values) < 3:
                 continue
@@ -152,32 +74,21 @@ def load_delivery_options():
             delivery_id = values[0]
             title = values[1]
             price_raw = values[2]
-
             if not delivery_id or not title:
                 continue
 
             price = None
-
             if price_raw:
                 try:
                     price = float(
-                        price_raw
-                        .replace(" ", "")
-                        .replace(",", ".")
-                        .replace("₽", "")
+                        price_raw.replace(" ", "").replace(",", ".").replace("₽", "")
                     )
-
                     if price.is_integer():
                         price = int(price)
-
                 except Exception:
                     price = None
 
-            options.append({
-                "id": delivery_id,
-                "title": title,
-                "price": price
-            })
+            options.append({"id": delivery_id, "title": title, "price": price})
 
         return options
 
@@ -186,96 +97,67 @@ def load_delivery_options():
         return []
 
 
-# =========================
-# КЛАВИАТУРА ДОСТАВКИ
-# =========================
-
 def delivery_keyboard(options):
     keyboard = types.ReplyKeyboardMarkup(
         resize_keyboard=True,
         one_time_keyboard=True
     )
-
     for option in options:
         if option["price"] is None:
             price_text = "договорная"
         else:
-            price_text = (
-                f"{option['price']:,} ₽"
-                .replace(",", " ")
-            )
+            price_text = f"{option['price']:,} ₽".replace(",", " ")
 
-        button_text = (
-            f"{option['title']} "
-            f"({price_text})"
+        keyboard.row(
+            types.KeyboardButton(f"{option['title']} ({price_text})")
         )
-
-        keyboard.row(types.KeyboardButton(button_text))
-
     return keyboard
 
-
-# =========================
-# КЛАВИАТУРА СЛУЖБЫ ДОСТАВКИ
-# =========================
 
 def delivery_service_keyboard():
     keyboard = types.ReplyKeyboardMarkup(
         resize_keyboard=True,
         one_time_keyboard=True
     )
-
     keyboard.row(types.KeyboardButton("Яндекс"))
     keyboard.row(types.KeyboardButton("Ozon"))
     keyboard.row(types.KeyboardButton("5Post"))
-
     return keyboard
 
 
-# =========================
-# ФОРМАТ ЦЕНЫ
-# =========================
-
 def format_price(value):
     try:
-        return (
-            f"{int(value):,}"
-            .replace(",", " ")
-            + " ₽"
-        )
+        return f"{int(value):,}".replace(",", " ") + " ₽"
     except Exception:
         return f"{value} ₽"
 
 
-# =========================
-# КОНТАКТ ПРИ ОШИБКЕ
-# =========================
-
-def request_contact(chat_id):
+def request_contact(chat_id, text=None, reason=None):
     order = orders_db.setdefault(chat_id, {})
     order["waiting_contact"] = True
+    order["contact_required"] = True
+    if reason:
+        order["contact_reason"] = reason
+
+    if text is None:
+        text = (
+            "Оставьте пожалуйста контакт, в рабочее время мы с вами "
+            "свяжемся и оформим заказ!"
+        )
 
     bot.send_message(
         chat_id,
-        "Оставьте пожалуйста контакт, в рабочее время мы с вами свяжемся и оформим заказ!",
+        text,
         reply_markup=contact_keyboard()
     )
 
 
-# =========================
-# УВЕДОМЛЕНИЕ ВЛАДЕЛЬЦУ
-# =========================
-
 def send_owner_notification(chat_id):
     order = orders_db.get(chat_id)
-
-    if not order:
+    if not order or order.get("completed"):
         return
 
-    if order.get("completed"):
-        return
-
-    if not order.get("paid_status") and not order.get("waiting_manager"):
+    if not order.get("paid_status") and not order.get("waiting_manager") and not order.get("contact_required"):
         return
 
     order["completed"] = True
@@ -284,17 +166,11 @@ def send_owner_notification(chat_id):
     first_name = order.get("first_name") or ""
     phone = order.get("phone")
     items = order.get("items", "")
-
-    product_total = order.get(
-        "product_total",
-        order.get("total", 0)
-    )
-
+    product_total = order.get("product_total", order.get("total", 0))
     delivery_title = order.get("delivery_title")
     delivery_price = order.get("delivery_price")
     delivery_service = order.get("delivery_service")
     delivery_address = order.get("delivery_address")
-
     total = order.get("total", product_total)
 
     owner_text = (
@@ -316,14 +192,10 @@ def send_owner_notification(chat_id):
             )
 
     if delivery_service:
-        owner_text += (
-            f"📦 Служба доставки: {delivery_service}\n"
-        )
+        owner_text += f"📦 Служба доставки: {delivery_service}\n"
 
     if delivery_address:
-        owner_text += (
-            f"📍 Куда доставить: {delivery_address}\n"
-        )
+        owner_text += f"📍 Куда доставить: {delivery_address}\n"
 
     owner_text += "\n"
 
@@ -333,9 +205,7 @@ def send_owner_notification(chat_id):
             "доставка по согласованию\n"
         )
     else:
-        owner_text += (
-            f"💰 Итого: <b>{format_price(total)}</b>\n"
-        )
+        owner_text += f"💰 Итого: <b>{format_price(total)}</b>\n"
 
     owner_text += "\n"
     owner_text += f"👤 Клиент: {first_name}\n"
@@ -348,90 +218,50 @@ def send_owner_notification(chat_id):
     else:
         owner_text += "📱 Телефон: не предоставлен\n"
 
-    if order.get("waiting_manager"):
-        owner_text += (
-            "\n⏳ Клиент ожидает диалога перед оплатой."
-        )
+    if order.get("contact_reason"):
+        owner_text += f"\n⚠️ Причина обращения: {order['contact_reason']}"
+    elif order.get("waiting_manager"):
+        owner_text += "\n⏳ Клиент ожидает диалога перед оплатой."
     else:
         owner_text += "\n💳 Клиент подтвердил оплату."
 
-    bot.send_message(
-        YOUR_TELEGRAM_ID,
-        owner_text,
-        parse_mode="HTML"
-    )
+    bot.send_message(YOUR_TELEGRAM_ID, owner_text, parse_mode="HTML")
 
-
-# =========================
-# ПРОВЕРКА И СПИСАНИЕ ОСТАТКОВ
-# =========================
 
 def decrement_stock(order):
     products = order.get("products", [])
-
     if not isinstance(products, list) or not products:
-        print(
-            "Ошибка списания остатков: пустой или некорректный список products",
-            products
-        )
         return False, "В заказе отсутствует список товаров."
 
     normalized_products = []
-
     for product in products:
         if not isinstance(product, dict):
-            print(
-                "Ошибка списания остатков: некорректный товар",
-                product
-            )
             return False, "Некорректные данные товара."
 
         product_id = str(product.get("id", "")).strip()
         quantity = product.get("quantity")
-
         if not product_id:
-            print(
-                "Ошибка списания остатков: у товара отсутствует id",
-                product
-            )
             return False, "Некорректные данные товара."
 
         try:
             quantity = int(quantity)
         except (TypeError, ValueError):
-            print(
-                "Ошибка списания остатков: некорректное количество",
-                product
-            )
             return False, "Некорректное количество товара."
 
         if quantity < 1:
-            print(
-                "Ошибка списания остатков: количество меньше 1",
-                product
-            )
             return False, "Некорректное количество товара."
 
-        normalized_products.append({
-            "id": product_id,
-            "quantity": quantity
-        })
+        normalized_products.append({"id": product_id, "quantity": quantity})
 
     payload = json.dumps(
-        {
-            "action": "check_and_decrement",
-            "items": normalized_products
-        },
+        {"action": "check_and_decrement", "items": normalized_products},
         ensure_ascii=False
     ).encode("utf-8")
 
     request = urllib.request.Request(
         STOCK_API_URL,
         data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0"
-        },
+        headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"},
         method="POST"
     )
 
@@ -439,57 +269,30 @@ def decrement_stock(order):
         with urllib.request.urlopen(request, timeout=15) as response:
             text = response.read().decode("utf-8")
 
-        try:
-            result = json.loads(text)
-        except json.JSONDecodeError:
-            print(
-                "Ошибка списания остатков: некорректный ответ API:",
-                text
-            )
-            return False, "Не удалось связаться с системой остатков."
-
+        result = json.loads(text)
         print("Ответ системы остатков:", result)
 
         if result.get("ok"):
             return True, None
 
-        return False, result.get(
-            "error",
-            "Не удалось обновить остатки."
-        )
+        return False, result.get("error", "Не удалось обновить остатки.")
 
     except urllib.error.HTTPError as error:
         try:
-            error_text = error.read().decode(
-                "utf-8",
-                errors="replace"
-            )
+            error_text = error.read().decode("utf-8", errors="replace")
         except Exception:
             error_text = ""
-
-        print(
-            "HTTP-ошибка списания остатков:",
-            error.code,
-            error_text
-        )
-
+        print("HTTP-ошибка списания остатков:", error.code, error_text)
         return False, "Не удалось связаться с системой остатков."
 
     except urllib.error.URLError as error:
-        print(
-            "Ошибка соединения с системой остатков:",
-            error.reason
-        )
+        print("Ошибка соединения с системой остатков:", error.reason)
         return False, "Не удалось связаться с системой остатков."
 
     except Exception as error:
         print("Ошибка списания остатков:", repr(error))
         return False, "Не удалось связаться с системой остатков."
 
-
-# =========================
-# ОПРЕДЕЛЕНИЕ, ЧТО СПРОСИТЬ
-# =========================
 
 def get_delivery_address_prompt(delivery_id):
     if delivery_id == "courier_ekb":
@@ -510,13 +313,8 @@ def get_delivery_address_prompt(delivery_id):
     return None
 
 
-# =========================
-# ОПЛАТА
-# =========================
-
 def send_payment_message(chat_id):
     order = orders_db.get(chat_id)
-
     if not order:
         return
 
@@ -528,28 +326,13 @@ def send_payment_message(chat_id):
     delivery_address = order.get("delivery_address")
     total = order.get("total", product_total)
 
+    customer_text = "Ваш заказ:\n\n" + f"{items}\n\n" + f"💰 Товары: {format_price(product_total)}\n"
+
     if delivery_title:
         if delivery_price is None:
-            delivery_line = (
-                f"🚚 Доставка: {delivery_title} "
-                "(стоимость по согласованию)"
-            )
+            customer_text += f"🚚 Доставка: {delivery_title} (стоимость по согласованию)\n"
         else:
-            delivery_line = (
-                f"🚚 Доставка: {delivery_title} — "
-                f"{format_price(delivery_price)}"
-            )
-    else:
-        delivery_line = None
-
-    customer_text = (
-        "Ваш заказ:\n\n"
-        f"{items}\n\n"
-        f"💰 Товары: {format_price(product_total)}\n"
-    )
-
-    if delivery_line:
-        customer_text += f"{delivery_line}\n"
+            customer_text += f"🚚 Доставка: {delivery_title} — {format_price(delivery_price)}\n"
 
     if delivery_service:
         customer_text += f"📦 Служба доставки: {delivery_service}\n"
@@ -563,16 +346,10 @@ def send_payment_message(chat_id):
         customer_text += (
             f"💰 Итого: <b>{format_price(product_total)}</b> + "
             "доставка по согласованию\n\n"
-        )
-    else:
-        customer_text += (
-            f"💰 Итого: <b>{format_price(total)}</b>\n\n"
-        )
-
-    if delivery_price is None and delivery_title:
-        customer_text += (
             "📦 Стоимость доставки будет согласована с менеджером.\n\n"
         )
+    else:
+        customer_text += f"💰 Итого: <b>{format_price(total)}</b>\n\n"
 
     customer_text += (
         "💳 Оплата переводом на Сбербанк:\n"
@@ -585,20 +362,8 @@ def send_payment_message(chat_id):
     )
 
     keyboard = types.InlineKeyboardMarkup()
-
-    keyboard.row(
-        types.InlineKeyboardButton(
-            "💳 Я оплатил",
-            callback_data="paid"
-        )
-    )
-
-    keyboard.row(
-        types.InlineKeyboardButton(
-            "⏳ Подожду менеджера",
-            callback_data="wait_manager"
-        )
-    )
+    keyboard.row(types.InlineKeyboardButton("💳 Я оплатил", callback_data="paid"))
+    keyboard.row(types.InlineKeyboardButton("⏳ Подожду менеджера", callback_data="wait_manager"))
 
     bot.send_message(
         chat_id,
@@ -608,14 +373,9 @@ def send_payment_message(chat_id):
     )
 
 
-# =========================
-# START
-# =========================
-
 @bot.message_handler(commands=["start"])
 def start(message):
     orders_db[message.chat.id] = {}
-
     bot.send_message(
         message.chat.id,
         "Добро пожаловать в Странные Вещи.\n"
@@ -624,46 +384,23 @@ def start(message):
     )
 
 
-# =========================
-# ЗАПИСАТЬСЯ
-# =========================
-
 @bot.message_handler(func=lambda message: message.text == "📅 Записаться")
 def handle_booking(message):
     bot.send_message(
         message.chat.id,
-        "Вы можете записаться на мастер-класс или Диоген по адресу: "
-        "https://dikidi.ru/2143045?p=0.pi-si&o=13&s=23280541"
+        "Вы можете записаться на мастер-класс или Диоген по адресу: https://dikidi.ru/2143045?p=0.pi-si&o=13&s=23280541"
     )
 
-
-# =========================
-# ИНДИВИДУАЛЬНЫЙ ЗАКАЗ
-# =========================
 
 @bot.message_handler(func=lambda message: message.text == "🧵 Индивидуальный заказ")
 def handle_custom_order(message):
-    bot.send_message(
-        message.chat.id,
-        "Опишите, что бы вы хотели заказать?"
-    )
+    bot.send_message(message.chat.id, "Опишите, что бы вы хотели заказать?")
 
-
-# =========================
-# ОБРАТНАЯ СВЯЗЬ
-# =========================
 
 @bot.message_handler(func=lambda message: message.text == "💬 Обратная связь")
 def handle_feedback(message):
-    bot.send_message(
-        message.chat.id,
-        "Чем бы вы хотели поделиться?"
-    )
+    bot.send_message(message.chat.id, "Чем бы вы хотели поделиться?")
 
-
-# =========================
-# ДАННЫЕ ИЗ MINI APP
-# =========================
 
 @bot.message_handler(content_types=["web_app_data"])
 def handle_web_app_data(message):
@@ -672,28 +409,26 @@ def handle_web_app_data(message):
     try:
         bot.delete_message(chat_id, message.message_id)
     except Exception as delete_error:
-        print(
-            "Не удалось удалить техническое сообщение:",
-            delete_error
-        )
+        print("Не удалось удалить техническое сообщение:", delete_error)
 
     try:
         data = json.loads(message.web_app_data.data)
     except Exception as error:
         print("Ошибка разбора данных Mini App:", error)
-        request_contact(chat_id)
+        request_contact(
+            chat_id,
+            "Не удалось прочитать заказ. Оставьте пожалуйста контакт, в рабочее время мы с вами свяжемся и оформим заказ!",
+            "Не удалось прочитать заказ"
+        )
         return
 
     products = data.get("products", [])
-
     if not isinstance(products, list):
         products = []
 
-    items = str(data.get("items", "")).strip()
+    items = str(data.get("items", "")).strip().replace(", ", "\n")
     total = data.get("total", 0)
     needs_delivery = bool(data.get("needs_delivery", False))
-
-    items = items.replace(", ", "\n")
 
     orders_db[chat_id] = {
         "items": items,
@@ -708,40 +443,32 @@ def handle_web_app_data(message):
         "delivery_address": None,
         "paid_status": None,
         "phone": None,
-        "username": (
-            message.from_user.username
-            if message.from_user
-            else None
-        ),
-        "user_id": (
-            message.from_user.id
-            if message.from_user
-            else chat_id
-        ),
-        "first_name": (
-            message.from_user.first_name
-            if message.from_user
-            else ""
-        ),
+        "username": message.from_user.username if message.from_user else None,
+        "user_id": message.from_user.id if message.from_user else chat_id,
+        "first_name": message.from_user.first_name if message.from_user else "",
         "waiting_manager": False,
         "waiting_contact": False,
-        "waiting_delivery_address": False,
+        "waiting_delivery": False,
         "waiting_delivery_service": False,
+        "waiting_delivery_address": False,
+        "contact_required": False,
         "completed": False
     }
-
-    order = orders_db[chat_id]
 
     if not needs_delivery:
         send_payment_message(chat_id)
         return
 
     options = load_delivery_options()
-
     if not options:
-        request_contact(chat_id)
+        request_contact(
+            chat_id,
+            "Не удалось загрузить варианты доставки. Оставьте пожалуйста контакт, в рабочее время мы с вами свяжемся и оформим заказ!",
+            "Не удалось загрузить варианты доставки"
+        )
         return
 
+    order = orders_db[chat_id]
     order["waiting_delivery"] = True
 
     bot.send_message(
@@ -751,17 +478,12 @@ def handle_web_app_data(message):
     )
 
 
-# =========================
-# ВЫБОР ДОСТАВКИ
-# =========================
-
 @bot.message_handler(
     func=lambda message: orders_db.get(message.chat.id, {}).get("waiting_delivery", False)
 )
 def handle_delivery(message):
     chat_id = message.chat.id
     order = orders_db.get(chat_id)
-
     if not order:
         return
 
@@ -769,13 +491,8 @@ def handle_delivery(message):
     selected_option = None
 
     for option in options:
-        if option["price"] is None:
-            price_text = "договорная"
-        else:
-            price_text = f"{option['price']:,} ₽".replace(",", " ")
-
+        price_text = "договорная" if option["price"] is None else f"{option['price']:,} ₽".replace(",", " ")
         expected_text = f"{option['title']} ({price_text})"
-
         if message.text == expected_text:
             selected_option = option
             break
@@ -794,15 +511,10 @@ def handle_delivery(message):
     order["delivery_price"] = selected_option["price"]
 
     product_total = order.get("product_total", order.get("total", 0))
-
-    if selected_option["price"] is None:
-        order["total"] = product_total
-    else:
-        order["total"] = product_total + selected_option["price"]
+    order["total"] = product_total if selected_option["price"] is None else product_total + selected_option["price"]
 
     if selected_option["id"] == "russia":
         order["waiting_delivery_service"] = True
-
         bot.send_message(
             chat_id,
             "📦 Выберите службу доставки:",
@@ -811,10 +523,8 @@ def handle_delivery(message):
         return
 
     prompt = get_delivery_address_prompt(selected_option["id"])
-
     if prompt:
         order["waiting_delivery_address"] = True
-
         bot.send_message(
             chat_id,
             prompt,
@@ -825,10 +535,6 @@ def handle_delivery(message):
     send_payment_message(chat_id)
 
 
-# =========================
-# СЛУЖБА ДОСТАВКИ
-# =========================
-
 @bot.message_handler(
     func=lambda message: orders_db.get(message.chat.id, {}).get("waiting_delivery_service", False)
 )
@@ -837,7 +543,6 @@ def handle_delivery_service(message):
         return
 
     order = orders_db.get(message.chat.id)
-
     if not order:
         return
 
@@ -853,38 +558,24 @@ def handle_delivery_service(message):
     )
 
 
-# =========================
-# АДРЕС / СТРАНА ДОСТАВКИ
-# =========================
-
 @bot.message_handler(
     func=lambda message: orders_db.get(message.chat.id, {}).get("waiting_delivery_address", False)
 )
 def handle_delivery_address(message):
     chat_id = message.chat.id
     order = orders_db.get(chat_id)
-
     if not order:
         return
 
     address = (message.text or "").strip()
-
     if not address:
-        bot.send_message(
-            chat_id,
-            "Напишите, пожалуйста, адрес ещё раз 😊"
-        )
+        bot.send_message(chat_id, "Напишите, пожалуйста, адрес ещё раз 😊")
         return
 
     order["delivery_address"] = address
     order["waiting_delivery_address"] = False
-
     send_payment_message(chat_id)
 
-
-# =========================
-# КНОПКА «Я ОПЛАТИЛ»
-# =========================
 
 @bot.callback_query_handler(func=lambda call: call.data == "paid")
 def paid(call):
@@ -907,13 +598,12 @@ def paid(call):
             "Не удалось подтвердить наличие товара.",
             show_alert=True
         )
-
-        bot.send_message(
+        request_contact(
             chat_id,
             "⚠️ Не удалось подтвердить наличие товара.\n\n"
-            "Оставьте пожалуйста контакт, в рабочее время мы с вами свяжемся и оформим заказ!"
+            "Оставьте пожалуйста контакт, в рабочее время мы с вами свяжемся и оформим заказ!",
+            "Не удалось подтвердить наличие товара"
         )
-        request_contact(chat_id)
         return
 
     order["paid_status"] = "paid"
@@ -938,10 +628,6 @@ def paid(call):
     send_owner_notification(chat_id)
 
 
-# =========================
-# КНОПКА «ПОДОЖДУ МЕНЕДЖЕРА»
-# =========================
-
 @bot.callback_query_handler(func=lambda call: call.data == "wait_manager")
 def wait_manager(call):
     chat_id = call.message.chat.id
@@ -952,7 +638,6 @@ def wait_manager(call):
         return
 
     order["waiting_manager"] = True
-
     bot.answer_callback_query(call.id)
 
     try:
@@ -974,31 +659,16 @@ def wait_manager(call):
     send_owner_notification(chat_id)
 
 
-# =========================
-# КОНТАКТНЫЕ ДАННЫЕ
-# =========================
-
 @bot.message_handler(content_types=["contact"])
 def handle_contact(message):
     chat_id = message.chat.id
     order = orders_db.setdefault(chat_id, {})
-
     order["phone"] = message.contact.phone_number
     order["waiting_contact"] = False
 
-    bot.send_message(
-        chat_id,
-        "",
-        reply_markup=types.ReplyKeyboardRemove()
-    )
-
-    if order.get("paid_status") or order.get("waiting_manager"):
+    if order.get("paid_status") or order.get("waiting_manager") or order.get("contact_required"):
         send_owner_notification(chat_id)
 
-
-# =========================
-# НЕ ОТПРАВЛЯТЬ НОМЕР
-# =========================
 
 @bot.message_handler(
     func=lambda message: message.text == "💬 Не отправлять номер, связаться в ТГ"
@@ -1006,32 +676,17 @@ def handle_contact(message):
 def no_phone(message):
     chat_id = message.chat.id
     order = orders_db.setdefault(chat_id, {})
-
     order["waiting_contact"] = False
     order["phone"] = None
 
-    bot.send_message(
-        chat_id,
-        "",
-        reply_markup=types.ReplyKeyboardRemove()
-    )
-
-    if order.get("paid_status") or order.get("waiting_manager"):
+    if order.get("paid_status") or order.get("waiting_manager") or order.get("contact_required"):
         send_owner_notification(chat_id)
 
-
-# =========================
-# МАГАЗИН
-# =========================
 
 @bot.message_handler(func=lambda message: message.text == "🛍 Магазин")
 def open_shop(message):
     return
 
-
-# =========================
-# ЗАПУСК
-# =========================
 
 if __name__ == "__main__":
     print("Бот запущен...")
