@@ -79,7 +79,13 @@ function updateCategoryDescription(category) {
 const originalFilterCategory = filterCategory;
 filterCategory = function(category, button) {
     const hasSearch = Boolean(document.getElementById('search')?.value.trim());
-    if (hasSearch) searchCategoryFilter = category;
+    if (hasSearch) {
+        searchCategoryFilter = category;
+    } else {
+        // Запоминаем последнюю реально выбранную категорию.
+        // Именно её нужно восстановить после очистки поиска.
+        categoryBeforeSearch = category;
+    }
     originalFilterCategory(category, button);
     updateCategoryDescription(category);
     updateCategoryFilterState();
@@ -141,6 +147,12 @@ if (searchEl) {
         searchCategoryFilter = null;
         clearButton.hidden = true;
         currentCategory = categoryBeforeSearch;
+        categoriesEl?.querySelectorAll('.cat-btn').forEach(button => {
+            const onclick = button.getAttribute('onclick') || '';
+            const match = onclick.match(/filterCategory\('([^']+)'/);
+            const category = match ? match[1] : null;
+            button.classList.toggle('active', category === categoryBeforeSearch);
+        });
         updateCategoryFilterState();
         render();
         searchEl.focus();
