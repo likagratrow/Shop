@@ -737,6 +737,11 @@ def handle_web_app_data(message):
         )
 
     try:
+        print(
+            "RAW WEB APP DATA:",
+            message.web_app_data.data
+        )
+
         data = json.loads(
             message.web_app_data.data
         )
