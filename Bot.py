@@ -7,7 +7,7 @@ from config import BOT_TOKEN
 YOUR_TELEGRAM_ID = 5219493908
 WEB_APP_URL = "https://likagratrow.github.io/Shop/"
 SHEET_ID = "1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk"
-STOCK_API_URL = "https://script.google.com/macros/s/AKfycbwwkQeC1U82T0LoYv9umYrc-pmeD0KSZP0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg/exec"
+STOCK_API_URL = "https://script.google.com/macros/s/AKfycbwwQkE1C0x82T0LoYv9umYrc-pmeD0KSZP0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg/exec"
 DELIVERY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?sheet=%D0%94%D0%BE%D1%81%D1%82%D0%B0%D0%B2%D0%BA%D0%B0"
 CONTACT_TEXT = "Спасибо! Для завершения оформления заказа отправьте номер телефона или, если удобнее, свяжемся через Telegram"
 REPEAT_CONTACT_TEXT = "Отличный выбор! Чтобы мы могли обсудить детали, оставьте пожалуйста контакты - Telegram или, если удобнее, то номер телефона."
@@ -89,7 +89,7 @@ def send_final_order_message(chat_id):
     order = orders_db.get(chat_id)
     if not order: return
     if order.get("repeat_order"):
-        text = "Спасибо!\n\nМастер свяжется с вами в рабочее время Пн-10-18."
+        text = "Спасибо!\n\nМастер свяжется с вами в рабочее время Пн-Пт 10-18."
     elif order.get("delivery_id") == "courier_ekb":
         text = "Спасибо!\n\nВсё-всё записал и передал менеджеру) Сборка заказа обычно занимает один рабочий день, затем мы с вами свяжемся и обрадуем, что готовы организовать доставку. Спасибо за заказ!"
     else:
@@ -325,7 +325,7 @@ def no_phone(message):
         return
     if order.get("paid_status") or order.get("waiting_manager") or order.get("contact_required"): send_owner_notification(chat_id)
     if order.get("paid_status"): send_final_order_message(chat_id)
-    elif order.get("waiting_manager"): bot.send_message(chat_id, "Хорошо 😊\n\nМенеджер свяжется с вами в рабочее время Пн-10-18.", reply_markup=shop_keyboard())
+    elif order.get("waiting_manager"): bot.send_message(chat_id, "Хорошо 😊\n\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())
 
 
 @bot.message_handler(func=lambda message: message.text == "🛍 Магазин")
