@@ -134,8 +134,10 @@ if (searchEl) {
     clearButton.innerText = '×';
     clearButton.setAttribute('aria-label', 'Очистить поиск');
     clearButton.hidden = !searchEl.value;
+    let previousSearchValue = searchEl.value.trim();
     clearButton.addEventListener('click', () => {
         searchEl.value = '';
+        previousSearchValue = '';
         searchCategoryFilter = null;
         clearButton.hidden = true;
         currentCategory = categoryBeforeSearch;
@@ -145,10 +147,12 @@ if (searchEl) {
     });
     wrapper.appendChild(clearButton);
     searchEl.addEventListener('input', () => {
-        const hadSearch = Boolean(searchEl.value.trim());
-        if (!hadSearch && searchEl.value.trim()) categoryBeforeSearch = currentCategory;
+        const currentSearchValue = searchEl.value.trim();
+        if (!previousSearchValue && currentSearchValue) {
+            categoryBeforeSearch = currentCategory;
+        }
+        previousSearchValue = currentSearchValue;
         clearButton.hidden = !searchEl.value;
-        if (!hadSearch && searchEl.value.trim()) categoryBeforeSearch = currentCategory;
         searchCategoryFilter = null;
         updateCategoryFilterState();
         render();
