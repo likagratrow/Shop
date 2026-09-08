@@ -38,6 +38,10 @@ sendOrder = function() {
     const payload =
         JSON.stringify({
             items: itemsText,
+            products: cart.map(item => ({
+                id: item.id,
+                quantity: item.count
+            })),
             total: total,
             needs_delivery: needsDelivery
         });
