@@ -15,7 +15,7 @@ YOUR_TELEGRAM_ID = 5219493908
 
 WEB_APP_URL = "https://likagratrow.github.io/Shop/"
 
-SHEET_ID = "1FcetqNVvNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk"
+SHEET_ID = "1QwKqA5yKrEZrU2jDZk94lnQgWV9AG2mo1hwvnWgOkSU"
 
 DELIVERY_SHEET_URL = (
     f"https://docs.google.com/spreadsheets/d/"
@@ -622,43 +622,31 @@ def handle_web_app_data(message):
         "completed": False
     }
 
-    if needs_delivery:
-        options = load_delivery_options()
-
-        if not options:
-            print(
-                "Не удалось загрузить варианты доставки."
-            )
-
-            bot.send_message(
-                chat_id,
-                "Не удалось загрузить варианты доставки. "
-                "Попробуйте оформить заказ ещё раз.",
-                reply_markup=shop_keyboard()
-            )
-
-            return
-
-        orders_db[chat_id][
-            "delivery_options"
-        ] = options
-
-        orders_db[chat_id][
-            "waiting_delivery"
-        ] = True
-
-        bot.send_message(
-            chat_id,
-            "🚚 Как вам доставить заказ?",
-            reply_markup=delivery_keyboard(
-                options
-            )
+    if not needs_delivery:
+        send_payment_message(
+            chat_id
         )
-
         return
 
-    send_payment_message(
-        chat_id
+    options = load_delivery_options()
+
+    if not options:
+        bot.send_message(
+            chat_id,
+            "Не удалось загрузить варианты доставки. "
+            "Попробуйте оформить заказ ещё раз.",
+            reply_markup=shop_keyboard()
+        )
+        return
+
+    order = orders_db[chat_id]
+
+    order["waiting_delivery"] = True
+
+    bot.send_message(
+        chat_id,
+        "🚚 Как вам доставить заказ?",
+        reply_markup=delivery_keyboard(options)
     )
 
 
@@ -686,10 +674,7 @@ def handle_delivery(message):
     if not order:
         return
 
-    options = order.get(
-        "delivery_options",
-        []
-    )
+    options = load_delivery_options()
 
     selected_option = None
 
@@ -714,49 +699,31 @@ def handle_delivery(message):
     if not selected_option:
         bot.send_message(
             chat_id,
-            "Пожалуйста, выберите один "
-            "из вариантов доставки кнопкой ниже.",
-            reply_markup=delivery_keyboard(
-                options
-            )
+            "Пожалуйста, выберите вариант доставки "
+            "одной из кнопок ниже.",
+            reply_markup=delivery_keyboard(options)
         )
-
         return
 
-    order["delivery_id"] = (
-        selected_option["id"]
-    )
-
-    order["delivery_title"] = (
-        selected_option["title"]
-    )
-
-    order["delivery_price"] = (
-        selected_option["price"]
-    )
-
     order["waiting_delivery"] = False
+    order["delivery_id"] = selected_option["id"]
+    order["delivery_title"] = selected_option["title"]
+    order["delivery_price"] = selected_option["price"]
 
     product_total = order.get(
         "product_total",
-        0
+        order.get("total", 0)
     )
 
-    delivery_price = selected_option[
-        "price"
-    ]
-
-    if delivery_price is not None:
+    if selected_option["price"] is None:
+        order["total"] = product_total
+    else:
         order["total"] = (
             product_total
-            + delivery_price
+            + selected_option["price"]
         )
 
-    else:
-        order["total"] = product_total
-
     if selected_option["id"] == "russia":
-
         order["waiting_delivery_service"] = True
 
         bot.send_message(
@@ -767,16 +734,16 @@ def handle_delivery(message):
 
         return
 
-    address_prompt = get_delivery_address_prompt(
+    prompt = get_delivery_address_prompt(
         selected_option["id"]
     )
 
-    if address_prompt:
+    if prompt:
         order["waiting_delivery_address"] = True
 
         bot.send_message(
             chat_id,
-            address_prompt,
+            prompt,
             reply_markup=types.ReplyKeyboardRemove()
         )
 
@@ -784,7 +751,7 @@ def handle_delivery(message):
 
     bot.send_message(
         chat_id,
-        "Способ доставки выбран 👍",
+        "Спасибо! 😊",
         reply_markup=types.ReplyKeyboardRemove()
     )
 
@@ -842,7 +809,6 @@ def handle_delivery_service(message):
     )
 
     order["waiting_delivery_service"] = False
-
     order["waiting_delivery_address"] = True
 
     bot.send_message(
@@ -880,35 +846,23 @@ def handle_delivery_address(message):
     if not order:
         return
 
-    if not message.text:
+    address = (
+        message.text or ""
+    ).strip()
+
+    if not address:
         bot.send_message(
             chat_id,
-            "Напишите, пожалуйста, данные для доставки "
-            "обычным текстом 😊"
+            "Напишите, пожалуйста, адрес ещё раз 😊"
         )
-
         return
 
-    delivery_address = message.text.strip()
-
-    if not delivery_address:
-        bot.send_message(
-            chat_id,
-            "Кажется, здесь ничего не получилось написать 😊\n\n"
-            "Пожалуйста, отправьте адрес или страну "
-            "ещё раз."
-        )
-
-        return
-
-    order["delivery_address"] = delivery_address
-
+    order["delivery_address"] = address
     order["waiting_delivery_address"] = False
 
     bot.send_message(
         chat_id,
-        "Записал 👍\n\n"
-        "Теперь всё необходимое для заказа есть.",
+        "Спасибо! 😊",
         reply_markup=types.ReplyKeyboardRemove()
     )
 
@@ -918,221 +872,93 @@ def handle_delivery_address(message):
 
 
 # =========================
-# УДАЛЕНИЕ КНОПОК ИЗ СООБЩЕНИЯ
-# =========================
-
-def remove_payment_buttons(call):
-    try:
-        bot.edit_message_reply_markup(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            reply_markup=None
-        )
-
-    except Exception as error:
-        print(
-            "Не удалось убрать кнопки оплаты:",
-            error
-        )
-
-
-# =========================
-# КЛИЕНТ НАЖАЛ «Я ОПЛАТИЛ»
+# КНОПКА «Я ОПЛАТИЛ»
 # =========================
 
 @bot.callback_query_handler(
     func=lambda call:
     call.data == "paid"
 )
-def handle_paid(call):
+def paid(call):
     chat_id = call.message.chat.id
-
-    remove_payment_buttons(
-        call
-    )
-
-    bot.answer_callback_query(
-        call.id
-    )
 
     order = orders_db.get(
         chat_id
     )
 
     if not order:
-        bot.send_message(
-            chat_id,
-            "Не удалось найти ваш заказ. "
-            "Пожалуйста, оформите его ещё раз.",
-            reply_markup=shop_keyboard()
+        bot.answer_callback_query(
+            call.id,
+            "Заказ не найден."
         )
-
         return
 
     order["paid_status"] = "paid"
 
-    order["waiting_manager"] = False
-
-    order["waiting_contact"] = True
+    bot.answer_callback_query(
+        call.id,
+        "Спасибо!"
+    )
 
     bot.send_message(
         chat_id,
-        "Спасибо! Для завершения оформления заказа "
-        "отправьте номер телефона или, если "
-        "удобнее, свяжемся через Telegram",
-        reply_markup=contact_keyboard()
+        "Спасибо! 😊\n\n"
+        "Всё-всё записал и передал менеджеру)\n"
+        "Сборка заказа обычно занимает один рабочий день, "
+        "затем мы с вами свяжемся и обрадуем, "
+        "что можно забрать (или что он отправлен).\n"
+        "Спасибо за заказ!",
+        reply_markup=shop_keyboard()
+    )
+
+    send_owner_notification(
+        chat_id
     )
 
 
 # =========================
-# КЛИЕНТ НАЖАЛ
-# «ПОДОЖДУ МЕНЕДЖЕРА»
+# КНОПКА «ПОДОЖДУ МЕНЕДЖЕРА»
 # =========================
 
 @bot.callback_query_handler(
     func=lambda call:
     call.data == "wait_manager"
 )
-def handle_wait_manager(call):
+def wait_manager(call):
     chat_id = call.message.chat.id
 
-    remove_payment_buttons(
-        call
+    order = orders_db.get(
+        chat_id
     )
+
+    if not order:
+        bot.answer_callback_query(
+            call.id,
+            "Заказ не найден."
+        )
+        return
+
+    order["waiting_manager"] = True
 
     bot.answer_callback_query(
         call.id
     )
 
-    order = orders_db.get(
-        chat_id
-    )
-
-    if not order:
-        bot.send_message(
-            chat_id,
-            "Не удалось найти ваш заказ. "
-            "Пожалуйста, оформите его ещё раз.",
-            reply_markup=shop_keyboard()
-        )
-
-        return
-
-    order["paid_status"] = "waiting_manager"
-
-    order["waiting_manager"] = True
-
-    order["waiting_contact"] = True
-
     bot.send_message(
         chat_id,
-        "Хорошо)\n\n"
-        "Менеджер свяжется с вами в рабочее время:\n"
-        "Пн–Пт, 10:00–18:00 "
-        "(Екатеринбург).\n\n"
-        "Для связи отправьте номер телефона или, "
-        "если удобнее, свяжемся через Telegram",
-        reply_markup=contact_keyboard()
+        "Хорошо 😊\n\n"
+        "Менеджер свяжется с вами в рабочее время.\n"
+        "Пн–Пт, 10:00–18:00 (Екатеринбург).",
+        reply_markup=shop_keyboard()
     )
 
-
-# =========================
-# КЛИЕНТ НЕ ХОЧЕТ ДАВАТЬ ТЕЛЕФОН
-# =========================
-
-@bot.message_handler(
-    func=lambda message:
-    message.text ==
-    "💬 Не отправлять номер, связаться в ТГ"
-)
-def handle_no_phone(message):
-    chat_id = message.chat.id
-
-    order = orders_db.get(
-        chat_id
-    )
-
-    if not order:
-        bot.send_message(
-            chat_id,
-            "Не удалось найти ваш заказ. "
-            "Пожалуйста, оформите его ещё раз.",
-            reply_markup=shop_keyboard()
-        )
-
-        return
-
-    current_username = (
-        message.from_user.username
-        if message.from_user
-        else None
-    )
-
-    order["username"] = (
-        current_username
-    )
-
-    order["waiting_contact"] = True
-
-    if not current_username:
-        bot.send_message(
-            chat_id,
-            "Похоже, у вас сейчас нет активного "
-            "Telegram-ника для связи.\n\n"
-            "Пожалуйста, отправьте номер телефона.",
-            reply_markup=contact_keyboard()
-        )
-
-        return
-
-    finalize_order(
+    send_owner_notification(
         chat_id
     )
 
 
 # =========================
-# НОРМАЛИЗАЦИЯ ТЕЛЕФОНА
-# =========================
-
-def normalize_phone(phone):
-    if not phone:
-        return None
-
-    phone = str(
-        phone
-    ).strip()
-
-    cleaned = (
-        phone
-        .replace(" ", "")
-        .replace("-", "")
-        .replace("(", "")
-        .replace(")", "")
-    )
-
-    if (
-        cleaned.startswith("7")
-        and len(cleaned) == 11
-    ):
-        cleaned = "+" + cleaned
-
-    elif (
-        cleaned.startswith("8")
-        and len(cleaned) == 11
-    ):
-        cleaned = (
-            "+7"
-            + cleaned[1:]
-        )
-
-    elif cleaned.startswith("+"):
-        pass
-
-    return cleaned
-
-
-# =========================
-# ПОЛУЧЕНИЕ ТЕЛЕФОНА
+# КОНТАКТНЫЕ ДАННЫЕ
 # =========================
 
 @bot.message_handler(
@@ -1146,118 +972,18 @@ def handle_contact(message):
     )
 
     if not order:
-        bot.send_message(
-            chat_id,
-            "Не удалось найти ваш заказ. "
-            "Пожалуйста, оформите его ещё раз.",
-            reply_markup=shop_keyboard()
-        )
-
         return
 
-    order["phone"] = normalize_phone(
-        message.contact.phone_number
-    )
+    phone = message.contact.phone_number
 
-    order["username"] = (
-        message.from_user.username
-        if message.from_user
-        else None
-    )
-
+    order["phone"] = phone
     order["waiting_contact"] = False
 
-    finalize_order(
-        chat_id
+    bot.send_message(
+        chat_id,
+        "Спасибо! 😊",
+        reply_markup=types.ReplyKeyboardRemove()
     )
-
-
-# =========================
-# ПРОВЕРКА АКТИВНОГО USERNAME
-# =========================
-
-def verify_current_username(user_id):
-    try:
-        user_chat = bot.get_chat(
-            user_id
-        )
-
-        username = getattr(
-            user_chat,
-            "username",
-            None
-        )
-
-        if username:
-            return username
-
-        return None
-
-    except Exception as error:
-        print(
-            "Ошибка проверки username:",
-            error
-        )
-
-        return None
-
-
-# =========================
-# ФИНАЛИЗАЦИЯ ЗАКАЗА
-# =========================
-
-def finalize_order(chat_id):
-    order = orders_db.get(
-        chat_id
-    )
-
-    if not order:
-        return
-
-    if order.get("completed"):
-        return
-
-    user_id = order.get(
-        "user_id",
-        chat_id
-    )
-
-    verified_username = (
-        verify_current_username(
-            user_id
-        )
-    )
-
-    if verified_username:
-        order["username"] = (
-            verified_username
-        )
-
-    else:
-        order["username"] = None
-
-    if not order.get("username"):
-
-        if order.get("phone"):
-            send_owner_notification(
-                chat_id
-            )
-
-            return
-
-        order["waiting_contact"] = True
-
-        bot.send_message(
-            chat_id,
-            "Похоже, ваш Telegram-ник больше "
-            "не активен для связи.\n\n"
-            "Чтобы мы точно смогли связаться с вами "
-            "по заказу, пожалуйста, отправьте номер "
-            "телефона.",
-            reply_markup=contact_keyboard()
-        )
-
-        return
 
     send_owner_notification(
         chat_id
@@ -1265,7 +991,39 @@ def finalize_order(chat_id):
 
 
 # =========================
-# ФИНАЛЬНОЕ УВЕДОМЛЕНИЕ ВЛАДЕЛЬЦУ
+# НЕ ОТПРАВЛЯТЬ НОМЕР
+# =========================
+
+@bot.message_handler(
+    func=lambda message:
+    message.text == "💬 Не отправлять номер, связаться в ТГ"
+)
+def no_phone(message):
+    chat_id = message.chat.id
+
+    order = orders_db.get(
+        chat_id
+    )
+
+    if not order:
+        return
+
+    order["waiting_contact"] = False
+    order["phone"] = None
+
+    bot.send_message(
+        chat_id,
+        "Хорошо 😊 Менеджер свяжется с вами в Telegram.",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
+
+    send_owner_notification(
+        chat_id
+    )
+
+
+# =========================
+# ФИНАЛЬНОЕ СООБЩЕНИЕ ВЛАДЕЛЬЦУ
 # =========================
 
 def send_owner_notification(chat_id):
@@ -1276,93 +1034,41 @@ def send_owner_notification(chat_id):
     if not order:
         return
 
-    if order.get("completed"):
-        return
-
-    user_id = order.get(
-        "user_id",
-        chat_id
-    )
-
-    verified_username = (
-        verify_current_username(
-            user_id
-        )
-    )
-
-    if verified_username:
-        order["username"] = (
-            verified_username
-        )
-
-    else:
-        order["username"] = None
-
-    if (
-        not order.get("username")
-        and not order.get("phone")
+    if order.get(
+        "completed"
     ):
-        order["waiting_contact"] = True
-
-        bot.send_message(
-            chat_id,
-            "Похоже, ваш Telegram-ник больше "
-            "не активен для связи, а номер телефона "
-            "ещё не указан.\n\n"
-            "Пожалуйста, отправьте номер телефона.",
-            reply_markup=contact_keyboard()
-        )
-
         return
 
-    first_name = order.get(
-        "first_name",
-        "не указано"
-    )
+    if not order.get(
+        "paid_status"
+    ) and not order.get(
+        "waiting_manager"
+    ):
+        return
+
+    order["completed"] = True
 
     username = order.get(
         "username"
     )
 
+    first_name = order.get(
+        "first_name"
+    ) or ""
+
     phone = order.get(
         "phone"
     )
 
-    user_id = order.get(
-        "user_id",
-        chat_id
+    items = order.get(
+        "items",
+        ""
     )
 
-    if username:
-        username_text = (
-            f"@{username}"
-        )
-
-    else:
-        username_text = "нет ника"
-
-    if phone:
-        phone_text = phone
-
-    else:
-        phone_text = "не предоставлен"
-
-    if order.get(
-        "paid_status"
-    ) == "paid":
-
-        status_text = (
-            "💳 Клиент отметил, что оплатил.\n"
-            "⚠️ Проверь поступление денег и выпиши чек."
-        )
-
-    else:
-
-        status_text = (
-            "⚠️ ЗАПРОСИТЬ ОПЛАТУ\n"
-            "Клиент ожидает диалога "
-            "перед оплатой."
-        )
+    product_total = order.get(
+        "product_total",
+        order.get("total", 0)
+    )
 
     delivery_title = order.get(
         "delivery_title"
@@ -1380,48 +1086,28 @@ def send_owner_notification(chat_id):
         "delivery_address"
     )
 
-    if delivery_title:
-
-        if delivery_price is None:
-
-            delivery_text = (
-                f"🚚 Доставка: {delivery_title} "
-                "(стоимость по согласованию)"
-            )
-
-        else:
-
-            delivery_text = (
-                f"🚚 Доставка: {delivery_title} — "
-                f"{format_price(delivery_price)}"
-            )
-
-    else:
-
-        delivery_text = None
-
-    owner_text = (
-        "🆕 НОВЫЙ ЗАКАЗ\n\n"
-
-        f"👤 Покупатель: {first_name}\n"
-
-        f"💬 Telegram: {username_text}\n"
-
-        f"🆔 Telegram ID: {user_id}\n"
-
-        f"📱 Телефон: {phone_text}\n\n"
-
-        "🛒 Заказ:\n"
-        f"{order.get('items', '')}\n\n"
-
-        f"💰 Товары: "
-        f"{format_price(order.get('product_total', 0))}\n"
+    total = order.get(
+        "total",
+        product_total
     )
 
-    if delivery_text:
-        owner_text += (
-            f"{delivery_text}\n"
-        )
+    owner_text = (
+        "🛍 НОВЫЙ ЗАКАЗ\n\n"
+        f"{items}\n\n"
+        f"💰 Товары: {format_price(product_total)}\n"
+    )
+
+    if delivery_title:
+        if delivery_price is None:
+            owner_text += (
+                f"🚚 Доставка: {delivery_title} "
+                "(стоимость по согласованию)\n"
+            )
+        else:
+            owner_text += (
+                f"🚚 Доставка: {delivery_title} — "
+                f"{format_price(delivery_price)}\n"
+            )
 
     if delivery_service:
         owner_text += (
@@ -1438,23 +1124,48 @@ def send_owner_notification(chat_id):
     owner_text += "\n"
 
     if delivery_price is None and delivery_title:
-
         owner_text += (
             f"💰 Итого: "
-            f"<b>{format_price(order.get('product_total', 0))}</b> + "
-            "доставка по согласованию\n\n"
+            f"<b>{format_price(product_total)}</b> + "
+            "доставка по согласованию\n"
         )
-
     else:
-
         owner_text += (
             f"💰 Итого: "
-            f"<b>{format_price(order.get('total', 0))}</b>\n\n"
+            f"<b>{format_price(total)}</b>\n"
         )
+
+    owner_text += "\n"
 
     owner_text += (
-        f"{status_text}"
+        f"👤 Клиент: {first_name}\n"
     )
+
+    if username:
+        owner_text += (
+            f"💬 Telegram: @{username}\n"
+        )
+
+    if phone:
+        owner_text += (
+            f"📱 Телефон: {phone}\n"
+        )
+    else:
+        owner_text += (
+            "📱 Телефон: не предоставлен\n"
+        )
+
+    if order.get(
+        "waiting_manager"
+    ):
+        owner_text += (
+            "\n⏳ Клиент ожидает диалога "
+            "перед оплатой."
+        )
+    else:
+        owner_text += (
+            "\n💳 Клиент подтвердил оплату."
+        )
 
     bot.send_message(
         YOUR_TELEGRAM_ID,
@@ -1462,98 +1173,10 @@ def send_owner_notification(chat_id):
         parse_mode="HTML"
     )
 
-    order["completed"] = True
-
-    order["waiting_contact"] = False
-
-    if order.get("delivery_id") == "courier_ekb":
-
-        final_message = (
-            "Спасибо!\n\n"
-            "Всё-всё записал и передал менеджеру) "
-            "Сборка заказа обычно занимает один рабочий день, "
-            "затем мы с вами свяжемся и обрадуем, "
-            "что готовы организовать доставку. "
-            "Спасибо за заказ!"
-        )
-
-    else:
-
-        final_message = (
-            "Спасибо!\n\n"
-            "Всё-всё записал и передал менеджеру) "
-            "Сборка заказа обычно занимает один рабочий день, "
-            "затем мы с вами свяжемся и обрадуем, "
-            "что можно забрать (или что он отправлен). "
-            "Спасибо за заказ!"
-        )
-
-    bot.send_message(
-        chat_id,
-        final_message,
-        reply_markup=shop_keyboard()
-    )
-
 
 # =========================
-# ОБРАБОТКА ТЕКСТА,
-# КОГДА ЖДЁМ КОНТАКТ
-# =========================
-
-@bot.message_handler(
-    func=lambda message:
-    orders_db.get(
-        message.chat.id,
-        {}
-    ).get(
-        "waiting_contact",
-        False
-    )
-)
-def handle_text_while_waiting_contact(message):
-    chat_id = message.chat.id
-
-    order = orders_db.get(
-        chat_id
-    )
-
-    if not order:
-        return
-
-    if message.text:
-
-        current_username = (
-            message.from_user.username
-            if message.from_user
-            else None
-        )
-
-        order["username"] = (
-            current_username
-        )
-
-        if not current_username:
-
-            bot.send_message(
-                chat_id,
-                "Сейчас у вас нет активного "
-                "Telegram-ника для связи.\n\n"
-                "Пожалуйста, отправьте номер телефона "
-                "кнопкой ниже.",
-                reply_markup=contact_keyboard()
-            )
-
-            return
-
-        finalize_order(
-            chat_id
-        )
-
-
-# =========================
-# ЗАПУСК БОТА
+# ЗАПУСК
 # =========================
 
 print("Бот запущен...")
-
 bot.infinity_polling()
