@@ -10,7 +10,7 @@ SHEET_ID = "1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk"
 STOCK_API_URL = "https://script.google.com/macros/s/AKfycbwwkQeC1U82T0LoYv9umYrc-pmeD0KSZP0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg/exec"
 DELIVERY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?sheet=%D0%94%D0%BE%D1%81%D1%82%D0%B0%D0%B2%D0%BA%D0%B0"
 CONTACT_TEXT = "Спасибо! Для завершения оформления заказа отправьте номер телефона или, если удобнее, свяжемся через Telegram"
-REPEAT_CONTACT_TEXT = "Отличный выбор! Чтобы мы могли обсудить детали, оставьте пожалуйста контакты - Telegram или, если удобнее, то номер телефона."
+REPEAT_CONTACT_TEXT = "Пожалуйста оставьте контакт (telegram или если удобнее, телефон), и мы свяжемся с вами по поводу изготовления на заказ. Спасибо!"
 MIXED_CONTACT_TEXT = "Пожалуйста оставьте контакт (telegram или если удобнее, телефон), и мы свяжемся с вами по поводу изготовления на заказ. Остальные товары будут доставлены как обычно. Спасибо!"
 
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -226,6 +226,14 @@ def start_delivery(chat_id, reason=None):
     bot.send_message(chat_id, "🚚 Выберите способ доставки:", reply_markup=delivery_keyboard(options))
 
 
+def after_delivery_step(chat_id):
+    order = orders_db.get(chat_id)
+    if order and order.get("repeat_order"):
+        finish_repeat_order(chat_id)
+    else:
+        send_payment_message(chat_id)
+
+
 @bot.message_handler(commands=["start"])
 def start(message):
     orders_db[message.chat.id] = {}
@@ -302,8 +310,7 @@ def paid(call):
     if order.get("mixed_order"):
         request_contact(chat_id, MIXED_CONTACT_TEXT)
     else:
-        send_owner_notification(chat_id)
-        send_final_order_message(chat_id)
+        request_contact(chat_id, CONTACT_TEXT)
     bot.answer_callback_query(call.id, "Оплата отмечена.")
 
 
@@ -391,17 +398,17 @@ def handle_text(message):
                 order["waiting_service"] = True
                 bot.send_message(chat_id, "📦 Выберите службу доставки:", reply_markup=delivery_service_keyboard())
             else:
-                send_payment_message(chat_id)
+                after_delivery_step(chat_id)
             return
     if order.get("waiting_service") and message.text in ("Яндекс", "Ozon", "5Post"):
         order["waiting_service"] = False
         order["delivery_service"] = message.text
-        send_payment_message(chat_id)
+        after_delivery_step(chat_id)
         return
     if order.get("waiting_address"):
         order["waiting_address"] = False
         order["delivery_address"] = message.text
-        send_payment_message(chat_id)
+        after_delivery_step(chat_id)
         return
 
 
