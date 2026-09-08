@@ -17,17 +17,51 @@ enhancementStyle.textContent = `
     .search-wrap #search { width: 100%; box-sizing: border-box; padding-right: 36px; }
     .search-clear { position: absolute; top: 50%; right: 8px; width: 28px; height: 28px; transform: translateY(-50%); border: none; background: transparent; color: #888; font-size: 22px; line-height: 28px; padding: 0; cursor: pointer; }
     .search-clear[hidden] { display: none; }
-    .search-active { margin: -7px 0 10px; font-size: 12px; color: var(--tg-theme-hint-color, #888); }
+    .categories.searching .cat-btn { background: #eef8ff; color: var(--tg-theme-text-color, #000); }
+    .categories.searching .cat-btn.active { background: #eef8ff; color: var(--tg-theme-text-color, #000); }
+    .categories.searching .cat-btn.category-filter-active { background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); }
+    .cat-btn { position: relative; min-width: 92px; padding-left: 14px; padding-right: 14px; }
+    .cat-btn .category-clear { display: none; margin-left: 8px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: currentColor; font-size: 20px; line-height: 18px; vertical-align: middle; cursor: pointer; }
+    .cat-btn.category-filter-active .category-clear { display: inline-block; }
+    .cat-btn.category-filter-active .category-label { display: inline-block; }
     .search-empty-hint { padding: 18px 12px; text-align: center; color: var(--tg-theme-hint-color, #888); font-size: 14px; line-height: 1.45; }
 `;
 document.head.appendChild(enhancementStyle);
 
 const categoriesEl = document.querySelector('.categories');
+let allButton = null;
 if (categoriesEl) {
-    const allButton = categoriesEl.querySelector('[onclick*="filterCategory(\'all\'"]');
-    if (allButton) allButton.remove();
+    allButton = categoriesEl.querySelector('[onclick*="filterCategory(\'all\'"]');
+    if (allButton) allButton.style.display = 'none';
     const itemsButton = categoriesEl.querySelector('[onclick*="filterCategory(\'items\'"]');
     if (itemsButton) filterCategory('items', itemsButton);
+    const buttons = categoriesEl.querySelectorAll('.cat-btn');
+    buttons.forEach(button => {
+        const label = button.textContent.trim();
+        if (!button.querySelector('.category-label')) {
+            button.textContent = '';
+            const labelEl = document.createElement('span');
+            labelEl.className = 'category-label';
+            labelEl.textContent = label;
+            button.appendChild(labelEl);
+            const clear = document.createElement('span');
+            clear.className = 'category-clear';
+            clear.textContent = '×';
+            clear.setAttribute('role', 'button');
+            clear.setAttribute('aria-label', `Сбросить категорию ${label}`);
+            clear.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                searchCategoryFilter = null;
+                if (searchEl) {
+                    currentCategory = 'all';
+                }
+                updateCategoryFilterState();
+                render();
+            });
+            button.appendChild(clear);
+        }
+    });
     const description = document.createElement('div');
     description.id = 'category-description';
     description.className = 'category-description';
@@ -47,7 +81,7 @@ filterCategory = function(category, button) {
     if (hasSearch) searchCategoryFilter = category;
     originalFilterCategory(category, button);
     updateCategoryDescription(category);
-    updateSearchState();
+    updateCategoryFilterState();
 };
 
 async function loadCategoryDescriptions() {
@@ -75,24 +109,17 @@ async function loadCategoryDescriptions() {
 
 const searchEl = document.getElementById('search');
 
-function updateSearchState() {
-    const searchValue = document.getElementById('search')?.value.trim();
-    const state = document.getElementById('search-active');
-    if (!state) return;
-    if (!searchValue) {
-        state.style.display = 'none';
-        state.innerText = '';
-        return;
-    }
-    state.style.display = '';
-    state.innerText = searchCategoryFilter
-        ? `Поиск: ${searchValue} · ${getCategoryName(searchCategoryFilter)}`
-        : `Поиск по всему каталогу: ${searchValue}`;
-}
-
-function getCategoryName(category) {
-    const button = document.querySelector(`[onclick*="filterCategory('${category}'"]`);
-    return button?.innerText?.trim() || category;
+function updateCategoryFilterState() {
+    if (!categoriesEl) return;
+    const hasSearch = Boolean(searchEl?.value.trim());
+    categoriesEl.classList.toggle('searching', hasSearch);
+    categoriesEl.querySelectorAll('.cat-btn').forEach(button => {
+        const onclick = button.getAttribute('onclick') || '';
+        const match = onclick.match(/filterCategory\('([^']+)'/);
+        const category = match ? match[1] : null;
+        const active = hasSearch && category && category === searchCategoryFilter;
+        button.classList.toggle('category-filter-active', Boolean(active));
+    });
 }
 
 if (searchEl) {
@@ -110,21 +137,17 @@ if (searchEl) {
         searchEl.value = '';
         searchCategoryFilter = null;
         clearButton.hidden = true;
+        currentCategory = 'items';
+        updateCategoryFilterState();
         render();
-        updateSearchState();
         searchEl.focus();
     });
     wrapper.appendChild(clearButton);
-    const searchState = document.createElement('div');
-    searchState.id = 'search-active';
-    searchState.className = 'search-active';
-    searchState.style.display = 'none';
-    wrapper.insertAdjacentElement('afterend', searchState);
     searchEl.addEventListener('input', () => {
         clearButton.hidden = !searchEl.value;
         searchCategoryFilter = null;
+        updateCategoryFilterState();
         render();
-        updateSearchState();
     });
 }
 
@@ -143,9 +166,9 @@ render = function() {
         currentCategory = searchCategoryFilter || 'all';
         originalRender();
         currentCategory = savedCategory;
-        updateSearchState();
-        const productContainer = document.querySelector('.products');
-        if (productContainer && !productContainer.children.length) {
+        updateCategoryFilterState();
+        const productContainer = document.getElementById('products');
+        if (productContainer && productContainer.querySelector('.empty-products')) {
             productContainer.innerHTML = `
                 <div class="search-empty-hint">
                     В этой категории ничего не найдено.<br>
@@ -157,7 +180,7 @@ render = function() {
     }
     searchCategoryFilter = null;
     originalRender();
-    updateSearchState();
+    updateCategoryFilterState();
 };
 
 const sortEl = document.getElementById('sort');
