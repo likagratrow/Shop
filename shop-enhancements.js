@@ -82,8 +82,6 @@ filterCategory = function(category, button) {
     if (hasSearch) {
         searchCategoryFilter = category;
     } else {
-        // Запоминаем последнюю реально выбранную категорию.
-        // Именно её нужно восстановить после очистки поиска.
         categoryBeforeSearch = category;
     }
     originalFilterCategory(category, button);
@@ -153,6 +151,7 @@ if (searchEl) {
             const category = match ? match[1] : null;
             button.classList.toggle('active', category === categoryBeforeSearch);
         });
+        updateCategoryDescription(currentCategory);
         updateCategoryFilterState();
         render();
         searchEl.focus();
@@ -200,6 +199,7 @@ render = function() {
     }
     searchCategoryFilter = null;
     originalRender();
+    updateCategoryDescription(currentCategory);
     updateCategoryFilterState();
     const productContainer = document.getElementById('products');
     if (productContainer && productContainer.querySelector('.empty-products')) {
