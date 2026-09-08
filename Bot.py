@@ -376,43 +376,7 @@ def decrement_stock(order):
     )
 
     try:
-        class PreservePostRedirectHandler(
-            urllib.request.HTTPRedirectHandler
-        ):
-            def redirect_request(
-                self,
-                req,
-                fp,
-                code,
-                msg,
-                headers,
-                newurl
-            ):
-                if (
-                    code in (301, 302, 303)
-                    and req.get_method() == "POST"
-                ):
-                    return urllib.request.Request(
-                        newurl,
-                        data=req.data,
-                        headers=dict(req.headers),
-                        method="POST"
-                    )
-
-                return super().redirect_request(
-                    req,
-                    fp,
-                    code,
-                    msg,
-                    headers,
-                    newurl
-                )
-
-        opener = urllib.request.build_opener(
-            PreservePostRedirectHandler()
-        )
-
-        with opener.open(
+        with urllib.request.urlopen(
             request,
             timeout=15
         ) as response:
@@ -616,22 +580,15 @@ def send_payment_message(chat_id):
 
     keyboard = types.InlineKeyboardMarkup()
 
-    paid_button = types.InlineKeyboardButton(
-        "💳 Я оплатил",
-        callback_data="paid"
-    )
-
-    manager_button = types.InlineKeyboardButton(
-        "⏳ Подожду менеджера",
-        callback_data="wait_manager"
-    )
-
     keyboard.row(
-        paid_button
-    )
-
-    keyboard.row(
-        manager_button
+        types.InlineKeyboardButton(
+            "💳 Я оплатил",
+            callback_data="paid"
+        ),
+        types.InlineKeyboardButton(
+            "⏳ Подожду менеджера",
+            callback_data="wait_manager"
+        )
     )
 
     bot.send_message(
@@ -643,453 +600,87 @@ def send_payment_message(chat_id):
 
 
 # =========================
-# START
+# КОМАНДА /START
 # =========================
 
-@bot.message_handler(
-    commands=["start"]
-)
+@bot.message_handler(commands=["start"])
 def start(message):
-    orders_db[
-        message.chat.id
-    ] = {}
-
     bot.send_message(
         message.chat.id,
-        "Добро пожаловать в «Странные Вещи»\n\n"
-        "Выберите, что хотите сделать.",
+        "Привет! 😊\n\n"
+        "Здесь можно посмотреть товары, "
+        "записаться на мастер-класс или "
+        "связаться с нами.",
         reply_markup=shop_keyboard()
     )
 
 
 # =========================
-# КНОПКА «ЗАПИСАТЬСЯ»
+# WEB APP DATA
 # =========================
 
-@bot.message_handler(
-    func=lambda message:
-    message.text == "📅 Записаться"
-)
-def handle_booking(message):
-    bot.send_message(
-        message.chat.id,
-        "Записаться на МК или Диоген можно по адресу:\n"
-        "https://dikidi.ru/2143045",
-        reply_markup=shop_keyboard()
-    )
-
-
-# =========================
-# КНОПКА «ИНДИВИДУАЛЬНЫЙ ЗАКАЗ»
-# =========================
-
-@bot.message_handler(
-    func=lambda message:
-    message.text == "🧵 Индивидуальный заказ"
-)
-def handle_custom_order(message):
-    bot.send_message(
-        message.chat.id,
-        "Индивидуальные заказы пока принимаем "
-        "вручную.\n\n"
-        "Напишите, что хотите сделать, "
-        "и мы обсудим детали.",
-        reply_markup=shop_keyboard()
-    )
-
-
-# =========================
-# КНОПКА «ОБРАТНАЯ СВЯЗЬ»
-# =========================
-
-@bot.message_handler(
-    func=lambda message:
-    message.text == "💬 Обратная связь"
-)
-def handle_feedback(message):
-    bot.send_message(
-        message.chat.id,
-        "Расскажите, что вы хотели бы нам сказать 😊",
-        reply_markup=shop_keyboard()
-    )
-
-
-# =========================
-# ДАННЫЕ ИЗ MINI APP
-# =========================
-
-@bot.message_handler(
-    content_types=["web_app_data"]
-)
+@bot.message_handler(content_types=["web_app_data"])
 def handle_web_app_data(message):
-    chat_id = message.chat.id
+    print(
+        "RAW WEB APP DATA:",
+        message.web_app_data.data
+    )
 
     try:
-        bot.delete_message(
-            chat_id,
-            message.message_id
-        )
-
-    except Exception as delete_error:
-        print(
-            "Не удалось удалить техническое сообщение:",
-            delete_error
-        )
-
-    try:
-        print(
-            "RAW WEB APP DATA:",
-            message.web_app_data.data
-        )
-
         data = json.loads(
             message.web_app_data.data
         )
-
-    except Exception as error:
-        print(
-            "Ошибка разбора данных Mini App:",
-            error
-        )
-
+    except json.JSONDecodeError:
         bot.send_message(
-            chat_id,
-            "Извините, бот еще маленький и иногда теряет нить разговора. К сожалению, он пропустил заказ мимо ушей( Не могли бы вы повторить его снова, пожалуйста 🥺",
-            reply_markup=shop_keyboard()
+            message.chat.id,
+            "Не удалось прочитать заказ. Попробуйте ещё раз."
         )
-
         return
-
-    items = str(
-        data.get(
-            "items",
-            ""
-        )
-    ).strip()
 
     products = data.get(
         "products",
         []
     )
 
-    if not isinstance(products, list):
-        products = []
-
-    total = data.get(
-        "total",
-        0
-    )
-
-    needs_delivery = bool(
-        data.get(
-            "needs_delivery",
-            False
-        )
-    )
-
-    items = items.replace(
-        ", ",
-        "\n"
-    )
-
-    orders_db[chat_id] = {
-        "items": items,
+    orders_db[message.chat.id] = {
+        "items": data.get("items", ""),
         "products": products,
-        "product_total": total,
-        "total": total,
-        "needs_delivery": needs_delivery,
-        "delivery_id": None,
-        "delivery_title": None,
-        "delivery_price": None,
-        "delivery_service": None,
-        "delivery_address": None,
-        "paid_status": None,
-        "phone": None,
-        "username": (
-            message.from_user.username
-            if message.from_user
-            else None
-        ),
-        "user_id": (
-            message.from_user.id
-            if message.from_user
-            else chat_id
-        ),
-        "first_name": (
-            message.from_user.first_name
-            if message.from_user
-            else ""
-        ),
-        "waiting_manager": False,
-        "waiting_contact": False,
-        "waiting_delivery": False,
-        "waiting_delivery_service": False,
-        "waiting_delivery_address": False,
-        "completed": False
+        "product_total": data.get("total", 0),
+        "total": data.get("total", 0),
+        "needs_delivery": data.get("needs_delivery", False)
     }
 
-    if not needs_delivery:
-        send_payment_message(
-            chat_id
-        )
-        return
+    order = orders_db[message.chat.id]
 
-    options = load_delivery_options()
+    if order.get("needs_delivery"):
+        options = load_delivery_options()
 
-    if not options:
-        bot.send_message(
-            chat_id,
-            "Извините, не удалось загрузить варианты доставки. "
-            "Пожалуйста, попробуйте оформить заказ ещё раз.",
-            reply_markup=shop_keyboard()
-        )
-        return
-
-    order = orders_db[chat_id]
-
-    order["waiting_delivery"] = True
-
-    bot.send_message(
-        chat_id,
-        "🚚 Как вам доставить заказ?",
-        reply_markup=delivery_keyboard(options)
-    )
-
-
-# =========================
-# ВЫБОР ДОСТАВКИ
-# =========================
-
-@bot.message_handler(
-    func=lambda message:
-    orders_db.get(
-        message.chat.id,
-        {}
-    ).get(
-        "waiting_delivery",
-        False
-    )
-)
-def handle_delivery(message):
-    chat_id = message.chat.id
-
-    order = orders_db.get(
-        chat_id
-    )
-
-    if not order:
-        return
-
-    options = load_delivery_options()
-
-    selected_option = None
-
-    for option in options:
-        if option["price"] is None:
-            price_text = "договорная"
-        else:
-            price_text = (
-                f"{option['price']:,} ₽"
-                .replace(",", " ")
+        if not options:
+            bot.send_message(
+                message.chat.id,
+                "Не удалось загрузить варианты доставки. "
+                "Попробуйте ещё раз позже."
             )
+            return
 
-        expected_text = (
-            f"{option['title']} "
-            f"({price_text})"
-        )
-
-        if message.text == expected_text:
-            selected_option = option
-            break
-
-    if not selected_option:
         bot.send_message(
-            chat_id,
-            "Пожалуйста, выберите вариант доставки "
-            "одной из кнопок ниже.",
+            message.chat.id,
+            "🚚 Выберите способ доставки:",
             reply_markup=delivery_keyboard(options)
         )
-        return
 
-    order["waiting_delivery"] = False
-    order["delivery_id"] = selected_option["id"]
-    order["delivery_title"] = selected_option["title"]
-    order["delivery_price"] = selected_option["price"]
-
-    product_total = order.get(
-        "product_total",
-        order.get("total", 0)
-    )
-
-    if selected_option["price"] is None:
-        order["total"] = product_total
     else:
-        order["total"] = (
-            product_total
-            + selected_option["price"]
-        )
-
-    if selected_option["id"] == "russia":
-        order["waiting_delivery_service"] = True
-
-        bot.send_message(
-            chat_id,
-            "📦 Выберите службу доставки:",
-            reply_markup=delivery_service_keyboard()
-        )
-
-        return
-
-    prompt = get_delivery_address_prompt(
-        selected_option["id"]
-    )
-
-    if prompt:
-        order["waiting_delivery_address"] = True
-
-        bot.send_message(
-            chat_id,
-            prompt,
-            reply_markup=types.ReplyKeyboardRemove()
-        )
-
-        return
-
-    bot.send_message(
-        chat_id,
-        "Спасибо! 😊",
-        reply_markup=types.ReplyKeyboardRemove()
-    )
-
-    send_payment_message(
-        chat_id
-    )
+        send_payment_message(message.chat.id)
 
 
 # =========================
-# ВЫБОР СЛУЖБЫ ДОСТАВКИ
+# ОПЛАТА
 # =========================
 
-@bot.message_handler(
-    func=lambda message:
-    orders_db.get(
-        message.chat.id,
-        {}
-    ).get(
-        "waiting_delivery_service",
-        False
-    )
-)
-def handle_delivery_service(message):
-    chat_id = message.chat.id
-
-    order = orders_db.get(
-        chat_id
-    )
-
-    if not order:
-        return
-
-    services = {
-        "Яндекс": "Яндекс",
-        "Ozon": "Ozon",
-        "5Post": "5Post"
-    }
-
-    selected_service = services.get(
-        message.text
-    )
-
-    if not selected_service:
-        bot.send_message(
-            chat_id,
-            "Пожалуйста, выберите службу доставки "
-            "одной из кнопок ниже.",
-            reply_markup=delivery_service_keyboard()
-        )
-
-        return
-
-    order["delivery_service"] = (
-        selected_service
-    )
-
-    order["waiting_delivery_service"] = False
-    order["waiting_delivery_address"] = True
-
-    bot.send_message(
-        chat_id,
-        "📍 Отлично)\n\n"
-        "Теперь напишите вручную адрес ПВЗ, "
-        "куда отправить заказ.\n\n"
-        "Можно просто указать город и адрес "
-        "выбранного ПВЗ 😊",
-        reply_markup=types.ReplyKeyboardRemove()
-    )
-
-
-# =========================
-# АДРЕС / СТРАНА ДОСТАВКИ
-# =========================
-
-@bot.message_handler(
-    func=lambda message:
-    orders_db.get(
-        message.chat.id,
-        {}
-    ).get(
-        "waiting_delivery_address",
-        False
-    )
-)
-def handle_delivery_address(message):
-    chat_id = message.chat.id
-
-    order = orders_db.get(
-        chat_id
-    )
-
-    if not order:
-        return
-
-    address = (
-        message.text or ""
-    ).strip()
-
-    if not address:
-        bot.send_message(
-            chat_id,
-            "Напишите, пожалуйста, адрес ещё раз 😊"
-        )
-        return
-
-    order["delivery_address"] = address
-    order["waiting_delivery_address"] = False
-
-    bot.send_message(
-        chat_id,
-        "Спасибо! 😊",
-        reply_markup=types.ReplyKeyboardRemove()
-    )
-
-    send_payment_message(
-        chat_id
-    )
-
-
-# =========================
-# КНОПКА «Я ОПЛАТИЛ»
-# =========================
-
-@bot.callback_query_handler(
-    func=lambda call:
-    call.data == "paid"
-)
+@bot.callback_query_handler(func=lambda call: call.data == "paid")
 def paid(call):
-    chat_id = call.message.chat.id
-
     order = orders_db.get(
-        chat_id
+        call.message.chat.id
     )
 
     if not order:
@@ -1099,10 +690,10 @@ def paid(call):
         )
         return
 
-    if order.get("paid_status") == "paid":
+    if order.get("paid"):
         bot.answer_callback_query(
             call.id,
-            "Заказ уже отмечен как оплаченный."
+            "Оплата уже отмечена."
         )
         return
 
@@ -1113,76 +704,45 @@ def paid(call):
     if not stock_ok:
         bot.answer_callback_query(
             call.id,
-            "Не удалось подтвердить заказ."
+            "Не удалось подтвердить наличие товара.",
+            show_alert=True
         )
-
-        if stock_error == "Not enough stock":
-            message_text = (
-                "К сожалению, нужного количества товара уже нет в наличии. "
-                "Пожалуйста, оформите заказ заново с актуальным количеством."
-            )
-        else:
-            message_text = (
-                "К сожалению, сейчас не удалось подтвердить наличие товара. "
-                "Пожалуйста, попробуйте оформить заказ ещё раз."
-            )
-
         bot.send_message(
-            chat_id,
-            message_text,
-            reply_markup=shop_keyboard()
+            call.message.chat.id,
+            "⚠️ Не удалось подтвердить наличие товара.\n\n"
+            f"Причина: {stock_error}\n\n"
+            "Оплата пока не отмечена."
         )
-
         return
 
-    order["paid_status"] = "paid"
-
-    try:
-        bot.edit_message_reply_markup(
-            chat_id,
-            call.message.message_id,
-            reply_markup=None
-        )
-    except Exception as edit_error:
-        print(
-            "Не удалось убрать кнопки оплаты:",
-            edit_error
-        )
+    order["paid"] = True
 
     bot.answer_callback_query(
         call.id,
-        "Спасибо!"
+        "Оплата отмечена!"
+    )
+
+    bot.edit_message_reply_markup(
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=None
     )
 
     bot.send_message(
-        chat_id,
-        "Спасибо! 😊\n\n"
-        "Всё-всё записал и передал менеджеру)\n"
-        "Сборка заказа обычно занимает один рабочий день, "
-        "затем мы с вами свяжемся и обрадуем, "
-        "что можно забрать (или что он отправлен).\n"
-        "Спасибо за заказ!",
-        reply_markup=shop_keyboard()
-    )
-
-    send_owner_notification(
-        chat_id
+        call.message.chat.id,
+        "Спасибо! 💳\n\n"
+        "Оплата отмечена. Заказ принят в работу."
     )
 
 
 # =========================
-# КНОПКА «ПОДОЖДУ МЕНЕДЖЕРА»
+# МЕНЕДЖЕР
 # =========================
 
-@bot.callback_query_handler(
-    func=lambda call:
-    call.data == "wait_manager"
-)
+@bot.callback_query_handler(func=lambda call: call.data == "wait_manager")
 def wait_manager(call):
-    chat_id = call.message.chat.id
-
     order = orders_db.get(
-        chat_id
+        call.message.chat.id
     )
 
     if not order:
@@ -1192,22 +752,51 @@ def wait_manager(call):
         )
         return
 
-    order["waiting_manager"] = True
-
     bot.answer_callback_query(
-        call.id
+        call.id,
+        "Хорошо!"
+    )
+
+    bot.edit_message_reply_markup(
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=None
     )
 
     bot.send_message(
-        chat_id,
+        call.message.chat.id,
         "Хорошо 😊\n\n"
-        "Менеджер свяжется с вами в рабочее время.\n"
-        "Пн–Пт, 10:00–18:00 (Екатеринбург).",
-        reply_markup=shop_keyboard()
+        "Менеджер свяжется с вами в рабочее время."
     )
 
-    send_owner_notification(
-        chat_id
+
+# =========================
+# ДОСТАВКА
+# =========================
+
+@bot.message_handler(func=lambda message: message.text == "📅 Записаться")
+def booking(message):
+    bot.send_message(
+        message.chat.id,
+        "Запись на мастер-классы пока оформляется "
+        "через менеджера 😊"
+    )
+
+
+@bot.message_handler(func=lambda message: message.text == "🧵 Индивидуальный заказ")
+def custom_order(message):
+    bot.send_message(
+        message.chat.id,
+        "Напишите, что вы хотите заказать, "
+        "и мы свяжемся с вами 😊"
+    )
+
+
+@bot.message_handler(func=lambda message: message.text == "💬 Обратная связь")
+def feedback(message):
+    bot.send_message(
+        message.chat.id,
+        "Напишите ваше сообщение следующим сообщением 😊"
     )
 
 
@@ -1215,216 +804,130 @@ def wait_manager(call):
 # КОНТАКТНЫЕ ДАННЫЕ
 # =========================
 
-@bot.message_handler(
-    content_types=["contact"]
-)
+@bot.message_handler(content_types=["contact"])
 def handle_contact(message):
-    chat_id = message.chat.id
-
-    order = orders_db.get(
-        chat_id
-    )
-
-    if not order:
-        return
-
-    phone = message.contact.phone_number
-
-    order["phone"] = phone
-    order["waiting_contact"] = False
+    orders_db.setdefault(
+        message.chat.id,
+        {}
+    )["phone"] = message.contact.phone_number
 
     bot.send_message(
-        chat_id,
-        "Спасибо! 😊",
-        reply_markup=types.ReplyKeyboardRemove()
-    )
-
-    send_owner_notification(
-        chat_id
+        message.chat.id,
+        "Спасибо! Номер получил 😊",
+        reply_markup=shop_keyboard()
     )
 
 
 # =========================
-# НЕ ОТПРАВЛЯТЬ НОМЕР
+# ДОСТАВКА: ВЫБОР
 # =========================
 
-@bot.message_handler(
-    func=lambda message:
-    message.text == "💬 Не отправлять номер, связаться в ТГ"
-)
-def no_phone(message):
-    chat_id = message.chat.id
-    
-    order = orders_db.get(
-        chat_id
-    )
+@bot.message_handler(func=lambda message: orders_db.get(message.chat.id, {}).get("needs_delivery") and not orders_db.get(message.chat.id, {}).get("delivery_title"))
+def handle_delivery_choice(message):
+    options = load_delivery_options()
 
-    if not order:
+    selected = None
+
+    for option in options:
+        if message.text.startswith(option["title"] + " "):
+            selected = option
+            break
+
+    if not selected:
         return
 
-    order["waiting_contact"] = False
-    order["phone"] = None
+    order = orders_db.get(
+        message.chat.id
+    )
+
+    order["delivery_id"] = selected["id"]
+    order["delivery_title"] = selected["title"]
+    order["delivery_price"] = selected["price"]
+
+    prompt = get_delivery_address_prompt(
+        selected["id"]
+    )
+
+    if prompt:
+        bot.send_message(
+            message.chat.id,
+            prompt,
+            reply_markup=types.ReplyKeyboardRemove()
+        )
+        order["waiting_for_delivery_address"] = True
+        return
 
     bot.send_message(
-        chat_id,
-        "Хорошо 😊 Менеджер свяжется с вами в Telegram.",
-        reply_markup=types.ReplyKeyboardRemove()
+        message.chat.id,
+        "📦 Выберите службу доставки:",
+        reply_markup=delivery_service_keyboard()
     )
 
-    send_owner_notification(
-        chat_id
-    )
+    order["waiting_for_delivery_service"] = True
 
 
 # =========================
-# ФИНАЛЬНОЕ СООБЩЕНИЕ ВЛАДЕЛЬЦУ
+# АДРЕС ДОСТАВКИ
 # =========================
 
-def send_owner_notification(chat_id):
+@bot.message_handler(func=lambda message: orders_db.get(message.chat.id, {}).get("waiting_for_delivery_address"))
+def handle_delivery_address(message):
     order = orders_db.get(
-        chat_id
+        message.chat.id
     )
 
-    if not order:
+    order["delivery_address"] = message.text.strip()
+    order["waiting_for_delivery_address"] = False
+
+    if order.get("delivery_id") == "russia":
+        bot.send_message(
+            message.chat.id,
+            "📦 Выберите службу доставки:",
+            reply_markup=delivery_service_keyboard()
+        )
+        order["waiting_for_delivery_service"] = True
         return
 
-    if order.get(
-        "completed"
+    send_payment_message(
+        message.chat.id
+    )
+
+
+# =========================
+# СЛУЖБА ДОСТАВКИ
+# =========================
+
+@bot.message_handler(func=lambda message: orders_db.get(message.chat.id, {}).get("waiting_for_delivery_service"))
+def handle_delivery_service(message):
+    if message.text not in (
+        "Яндекс",
+        "Ozon",
+        "5Post"
     ):
         return
 
-    if not order.get(
-        "paid_status"
-    ) and not order.get(
-        "waiting_manager"
-    ):
-        return
-
-    order["completed"] = True
-
-    username = order.get(
-        "username"
+    order = orders_db.get(
+        message.chat.id
     )
 
-    first_name = order.get(
-        "first_name"
-    ) or ""
+    order["delivery_service"] = message.text
+    order["waiting_for_delivery_service"] = False
 
-    phone = order.get(
-        "phone"
+    send_payment_message(
+        message.chat.id
     )
 
-    items = order.get(
-        "items",
-        ""
-    )
 
-    product_total = order.get(
-        "product_total",
-        order.get("total", 0)
-    )
+# =========================
+# ОТМЕНА / МЕНЮ
+# =========================
 
-    delivery_title = order.get(
-        "delivery_title"
-    )
-
-    delivery_price = order.get(
-        "delivery_price"
-    )
-
-    delivery_service = order.get(
-        "delivery_service"
-    )
-
-    delivery_address = order.get(
-        "delivery_address"
-    )
-
-    total = order.get(
-        "total",
-        product_total
-    )
-
-    owner_text = (
-        "🛍 НОВЫЙ ЗАКАЗ\n\n"
-        f"{items}\n\n"
-        f"💰 Товары: {format_price(product_total)}\n"
-    )
-
-    if delivery_title:
-        if delivery_price is None:
-            owner_text += (
-                f"🚚 Доставка: {delivery_title} "
-                "(стоимость по согласованию)\n"
-            )
-        else:
-            owner_text += (
-                f"🚚 Доставка: {delivery_title} — "
-                f"{format_price(delivery_price)}\n"
-            )
-
-    if delivery_service:
-        owner_text += (
-            f"📦 Служба доставки: "
-            f"{delivery_service}\n"
-        )
-
-    if delivery_address:
-        owner_text += (
-            f"📍 Куда доставить: "
-            f"{delivery_address}\n"
-        )
-
-    owner_text += "\n"
-
-    if delivery_price is None and delivery_title:
-        owner_text += (
-            f"💰 Итого: "
-            f"<b>{format_price(product_total)}</b> + "
-            "доставка по согласованию\n"
-        )
-    else:
-        owner_text += (
-            f"💰 Итого: "
-            f"<b>{format_price(total)}</b>\n"
-        )
-
-    owner_text += "\n"
-
-    owner_text += (
-        f"👤 Клиент: {first_name}\n"
-    )
-
-    if username:
-        owner_text += (
-            f"💬 Telegram: @{username}\n"
-        )
-
-    if phone:
-        owner_text += (
-            f"📱 Телефон: {phone}\n"
-        )
-    else:
-        owner_text += (
-            "📱 Телефон: не предоставлен\n"
-        )
-
-    if order.get(
-        "waiting_manager"
-    ):
-        owner_text += (
-            "\n⏳ Клиент ожидает диалога "
-            "перед оплатой."
-        )
-    else:
-        owner_text += (
-            "\n💳 Клиент подтвердил оплату."
-        )
-
+@bot.message_handler(func=lambda message: message.text == "🛍 Магазин")
+def open_shop(message):
     bot.send_message(
-        YOUR_TELEGRAM_ID,
-        owner_text,
-        parse_mode="HTML"
+        message.chat.id,
+        "Открываю магазин 🛍",
+        reply_markup=shop_keyboard()
     )
 
 
@@ -1432,5 +935,6 @@ def send_owner_notification(chat_id):
 # ЗАПУСК
 # =========================
 
-print("Бот запущен...")
-bot.infinity_polling()
+if __name__ == "__main__":
+    print("Бот запущен...")
+    bot.infinity_polling(skip_pending=True)
