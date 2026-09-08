@@ -323,7 +323,43 @@ def decrement_stock(order):
     )
 
     try:
-        with urllib.request.urlopen(
+        class PreservePostRedirectHandler(
+            urllib.request.HTTPRedirectHandler
+        ):
+            def redirect_request(
+                self,
+                req,
+                fp,
+                code,
+                msg,
+                headers,
+                newurl
+            ):
+                if (
+                    code in (301, 302, 303)
+                    and req.get_method() == "POST"
+                ):
+                    return urllib.request.Request(
+                        newurl,
+                        data=req.data,
+                        headers=dict(req.headers),
+                        method="POST"
+                    )
+
+                return super().redirect_request(
+                    req,
+                    fp,
+                    code,
+                    msg,
+                    headers,
+                    newurl
+                )
+
+        opener = urllib.request.build_opener(
+            PreservePostRedirectHandler()
+        )
+
+        with opener.open(
             request,
             timeout=15
         ) as response:
