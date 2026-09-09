@@ -14,6 +14,8 @@ body {
     padding-bottom: 70px;
 }
 
+body.lightbox-open { overflow: hidden; }
+
 /* ==================================================
    ПОИСК И СОРТИРОВКА
    ================================================== */
@@ -111,8 +113,61 @@ body {
    ================================================== */
 
 .product-modal-gallery { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 5px; width: 100%; aspect-ratio: 16 / 9; border-radius: 8px; margin-bottom: 15px; }
-.product-modal-gallery img { flex: 0 0 100%; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; scroll-snap-align: start; }
+.product-modal-gallery img { flex: 0 0 100%; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; scroll-snap-align: start; cursor: zoom-in; }
 .product-modal-gallery::-webkit-scrollbar { display: none; }
+
+/* ==================================================
+   УВЕЛИЧЕНИЕ ИЗОБРАЖЕНИЯ
+   ================================================== */
+
+.image-lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.94);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    touch-action: pan-x;
+}
+
+.image-lightbox-track {
+    display: flex;
+    width: 100vw;
+    height: 100vh;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+}
+
+.image-lightbox-track::-webkit-scrollbar { display: none; }
+
+.image-lightbox-slide {
+    flex: 0 0 100vw;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    scroll-snap-align: start;
+}
+
+.image-lightbox-slide img {
+    display: block;
+    max-width: 96vw;
+    max-height: 94vh;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 4px;
+    cursor: zoom-out;
+    user-select: none;
+    -webkit-user-drag: none;
+}
 
 /* ==================================================
    ТЕКСТ ТОВАРА
