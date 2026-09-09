@@ -211,7 +211,10 @@ function render() {
             const src = images.length ? getImageUrl(images[0]) : 'images/placeholder.jpg';
             imagesHtml = `<img src="${escapeHtml(src)}" class="main-img" alt="${escapeHtml(product.name)}" onerror="this.onerror=null;this.src='images/placeholder.jpg';">`;
         }
-        return `<div class="product-card" data-product-id="${escapeHtml(String(product.id))}" onclick="openProductModal(${JSON.stringify(product.id)})">${imagesHtml}<h4>${escapeHtml(product.name)}</h4><p class="product-card-price"><b>${formatPrice(product.price)} ₽</b></p><p class="product-card-stock">${escapeHtml(getStockText(product))}</p><div class="card-button-area">${getCardButtonHtml(product)}</div></div>`;
+        const stockHtml = product.category === 'items'
+            ? `<p class="product-card-stock">${escapeHtml(getStockText(product))}</p>`
+            : '';
+        return `<div class="product-card" data-product-id="${escapeHtml(String(product.id))}" onclick="openProductModal(${JSON.stringify(product.id)})">${imagesHtml}<h4>${escapeHtml(product.name)}</h4><p class="product-card-price"><b>${formatPrice(product.price)} ₽</b></p>${stockHtml}<div class="card-button-area">${getCardButtonHtml(product)}</div></div>`;
     }).join('');
 }
 
