@@ -16,12 +16,12 @@ enhancementStyle.textContent = `
     .category-description { margin: 0 0 15px; padding: 10px 12px; border-radius: 10px; background: var(--tg-theme-secondary-bg-color, #f5f5f5); color: var(--tg-theme-text-color, #000); font-size: 14px; line-height: 1.45; }
     .search-wrap { position: relative; flex: 1; min-width: 0; }
     .search-wrap #search { width: 100%; box-sizing: border-box; padding-right: 36px; }
-    .search-clear { position: absolute; top: 50%; right: 8px; width: 28px; height: 28px; transform: translateY(-50%); border: none; background: transparent; color: #888; font-size: 22px; line-height: 28px; padding: 0; cursor: pointer; }
+    .search-clear { position: absolute; top: 50%; right: 8px; width: 28px; height: 28px; transform: translateY(-50%); border: none; background: transparent; color: var(--tg-theme-hint-color, #888); font-size: 22px; line-height: 28px; padding: 0; cursor: pointer; }
     .search-clear[hidden] { display: none; }
     .cat-btn { position: relative; min-width: 0; width: 100%; padding-left: 8px; padding-right: 8px; }
-    .categories:not(.searching) .cat-btn:not(.active) { background: rgba(36, 129, 204, 0.38) !important; color: #fff !important; }
-    .categories.searching .cat-btn { background: rgba(36, 129, 204, 0.38) !important; color: #fff !important; }
-    .categories.searching .cat-btn.active { background: rgba(36, 129, 204, 0.38) !important; color: #fff !important; }
+    .categories:not(.searching) .cat-btn:not(.active) { background: color-mix(in srgb, var(--tg-theme-button-color, #2481cc) 38%, var(--tg-theme-secondary-bg-color, #eee)) !important; color: var(--tg-theme-button-text-color, #fff) !important; }
+    .categories.searching .cat-btn { background: color-mix(in srgb, var(--tg-theme-button-color, #2481cc) 38%, var(--tg-theme-secondary-bg-color, #eee)) !important; color: var(--tg-theme-button-text-color, #fff) !important; }
+    .categories.searching .cat-btn.active { background: color-mix(in srgb, var(--tg-theme-button-color, #2481cc) 38%, var(--tg-theme-secondary-bg-color, #eee)) !important; color: var(--tg-theme-button-text-color, #fff) !important; }
     .categories.searching .cat-btn.category-filter-active { background: var(--tg-theme-button-color, #2481cc) !important; color: var(--tg-theme-button-text-color, #fff) !important; }
     .cat-btn .category-clear { display: none; margin-left: 8px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: currentColor; font-size: 20px; line-height: 18px; vertical-align: middle; cursor: pointer; }
     .cat-btn.category-filter-active .category-clear { display: inline-block; }
@@ -29,6 +29,66 @@ enhancementStyle.textContent = `
     .search-empty-hint { padding: 18px 12px; text-align: center; color: var(--tg-theme-hint-color, #888); font-size: 14px; line-height: 1.45; }
     .category-empty-hint { padding: 18px 12px; text-align: center; color: var(--tg-theme-hint-color, #888); font-size: 14px; line-height: 1.5; }
     .availability-empty-hint { grid-column: 1 / -1; padding: 30px 20px; text-align: center; color: var(--tg-theme-hint-color, #888); font-size: 14px; line-height: 1.5; }
+
+    /* Единая цветовая система на основе темы Telegram */
+    #search, #sort { border-color: color-mix(in srgb, var(--tg-theme-hint-color, #888) 30%, transparent); }
+    .cat-btn { background: var(--tg-theme-secondary-bg-color, #eee); color: var(--tg-theme-text-color, #000); }
+    .availability-filter { border: 1px solid color-mix(in srgb, var(--tg-theme-button-color, #2481cc) 10%, transparent); }
+    .availability-filter input { accent-color: var(--tg-theme-button-color, #2481cc); }
+    .card-cart-btn, .product-add-btn, .order-btn { background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); }
+    .close-btn { background: var(--tg-theme-secondary-bg-color, #eee); color: var(--tg-theme-text-color, #000); }
+    #cart-btn.cart-empty { background: var(--tg-theme-secondary-bg-color, #eee); color: var(--tg-theme-hint-color, #888); }
+    #cart-btn.cart-has-items { background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); }
+
+    /* Невидимая зона попадания: минимум 44×44 без увеличения визуальных элементов */
+    .search-clear,
+    .cat-btn,
+    .card-cart-btn,
+    .card-quantity-btn,
+    .cart-minus,
+    .cart-plus,
+    .cart-remove,
+    .product-quantity button,
+    .product-add-btn,
+    .order-btn,
+    .close-btn,
+    .product-modal-close {
+        position: relative;
+    }
+    .search-clear::before,
+    .cat-btn::before,
+    .card-cart-btn::before,
+    .card-quantity-btn::before,
+    .cart-minus::before,
+    .cart-plus::before,
+    .cart-remove::before,
+    .product-quantity button::before,
+    .product-add-btn::before,
+    .order-btn::before,
+    .close-btn::before,
+    .product-modal-close::before {
+        content: '';
+        position: absolute;
+        inset: -4px;
+        background: transparent;
+    }
+    .cat-btn::before,
+    .card-cart-btn::before,
+    .product-add-btn::before,
+    .order-btn::before,
+    .close-btn::before {
+        inset: 0;
+    }
+    .search-clear::before { inset: -8px; }
+    .card-quantity-btn::before { inset: -4px -3px; }
+    .cart-minus::before,
+    .cart-plus::before,
+    .cart-remove::before { inset: -4px -2px; }
+    .product-quantity button::before { inset: -1px; }
+    .product-modal-close::before { inset: -4px; }
+
+    /* Изображения: браузер откладывает загрузку дальних карточек */
+    .product-card img { content-visibility: auto; }
 `;
 document.head.appendChild(enhancementStyle);
 
@@ -313,5 +373,20 @@ addProductToCartFromModal = function(id) {
     if (button) button.innerText = 'В корзину';
 };
 
+// Делаем изображения карточек ленивыми и асинхронными сразу после их появления.
+function optimizeProductImages(root = document) {
+    root.querySelectorAll('.product-card img').forEach(img => {
+        img.loading = 'lazy';
+        img.decoding = 'async';
+    });
+}
+
+const productsContainer = document.getElementById('products');
+if (productsContainer && typeof MutationObserver !== 'undefined') {
+    const imageObserver = new MutationObserver(() => optimizeProductImages(productsContainer));
+    imageObserver.observe(productsContainer, { childList: true, subtree: true });
+}
+
 loadCategoryDescriptions();
 applyAvailabilityFilter();
+optimizeProductImages();
