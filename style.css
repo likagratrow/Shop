@@ -185,3 +185,42 @@ body.lightbox-open { overflow: hidden; }
 .product-quantity button { width: 42px; height: 42px; font-size: 22px; border: none; border-radius: 8px; background: #eee; cursor: pointer; }
 .product-quantity span { min-width: 30px; text-align: center; font-size: 18px; font-weight: bold; }
 .product-add-btn { width: 100%; padding: 12px; background: var(--tg-theme-button-color, #2481cc); color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }
+
+/* ==================================================
+   КОМПАКТНАЯ СТРОКА КОРЗИНЫ
+   ================================================== */
+
+.cart-item {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px !important;
+}
+
+.cart-item > div:first-child {
+    min-width: 0;
+    margin-bottom: 0 !important;
+}
+
+.cart-item > div:nth-child(2) {
+    display: contents !important;
+    margin-top: 0 !important;
+}
+
+.cart-item .cart-minus,
+.cart-item .cart-plus,
+.cart-item .cart-remove {
+    flex: none;
+    margin: 0 !important;
+}
+
+.cart-item .cart-remove {
+    width: 40px !important;
+    height: 36px !important;
+    margin-left: 0 !important;
+}
+
+.cart-item span {
+    white-space: nowrap;
+}
