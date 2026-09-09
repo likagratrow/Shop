@@ -12,13 +12,13 @@ let categoryBeforeSearch = 'items';
 
 const enhancementStyle = document.createElement('style');
 enhancementStyle.textContent = `
-    .categories { position: sticky; top: 0; z-index: 6; padding: 8px 0; background: var(--tg-theme-bg-color, #fff); display: flex; flex-wrap: wrap; justify-content: center; overflow-x: visible; }
+    .categories { position: sticky; top: 0; z-index: 6; padding: 8px 0; background: var(--tg-theme-bg-color, #fff); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; overflow-x: visible; }
     .category-description { margin: 0 0 15px; padding: 10px 12px; border-radius: 10px; background: var(--tg-theme-secondary-bg-color, #f5f5f5); color: var(--tg-theme-text-color, #000); font-size: 14px; line-height: 1.45; }
     .search-wrap { position: relative; flex: 1; min-width: 0; }
     .search-wrap #search { width: 100%; box-sizing: border-box; padding-right: 36px; }
     .search-clear { position: absolute; top: 50%; right: 8px; width: 28px; height: 28px; transform: translateY(-50%); border: none; background: transparent; color: #888; font-size: 22px; line-height: 28px; padding: 0; cursor: pointer; }
     .search-clear[hidden] { display: none; }
-    .cat-btn { position: relative; min-width: 92px; padding-left: 14px; padding-right: 14px; }
+    .cat-btn { position: relative; min-width: 0; width: 100%; padding-left: 8px; padding-right: 8px; }
     .categories:not(.searching) .cat-btn:not(.active) { background: rgba(36, 129, 204, 0.38) !important; color: #fff !important; }
     .categories.searching .cat-btn { background: rgba(36, 129, 204, 0.38) !important; color: #fff !important; }
     .categories.searching .cat-btn.active { background: rgba(36, 129, 204, 0.38) !important; color: #fff !important; }
@@ -28,6 +28,7 @@ enhancementStyle.textContent = `
     .cat-btn.category-filter-active .category-label { display: inline-block; }
     .search-empty-hint { padding: 18px 12px; text-align: center; color: var(--tg-theme-hint-color, #888); font-size: 14px; line-height: 1.45; }
     .category-empty-hint { padding: 18px 12px; text-align: center; color: var(--tg-theme-hint-color, #888); font-size: 14px; line-height: 1.5; }
+    .availability-empty-hint { grid-column: 1 / -1; padding: 30px 20px; text-align: center; color: var(--tg-theme-hint-color, #888); font-size: 14px; line-height: 1.5; }
 `;
 document.head.appendChild(enhancementStyle);
 
@@ -106,6 +107,61 @@ async function loadCategoryDescriptions() {
     } catch (error) {
         console.warn('Не удалось загрузить описания категорий:', error);
     }
+}
+
+// ==================================================
+// ФИЛЬТР "ТОЛЬКО В НАЛИЧИИ"
+// ==================================================
+
+const onlyInStockEl = document.getElementById('only-in-stock');
+const ONLY_IN_STOCK_STORAGE_KEY = 'shopOnlyInStock';
+
+function isProductInStock(product) {
+    return product.balance === Infinity || product.balance > 0;
+}
+
+function applyAvailabilityFilter() {
+    const productContainer = document.getElementById('products');
+    if (!productContainer) return;
+
+    const onlyInStock = onlyInStockEl?.checked ?? true;
+    const cards = productContainer.querySelectorAll('.product-card');
+    let visibleCount = 0;
+
+    cards.forEach(card => {
+        const productId = card.getAttribute('data-product-id');
+        const product = products.find(item => String(item.id) === String(productId));
+        const hidden = onlyInStock && product && !isProductInStock(product);
+        card.style.display = hidden ? 'none' : '';
+        if (!hidden) visibleCount += 1;
+    });
+
+    const existingHint = productContainer.querySelector('.availability-empty-hint');
+    if (existingHint) existingHint.remove();
+
+    if (cards.length && visibleCount === 0) {
+        productContainer.innerHTML = '<div class="availability-empty-hint">Сейчас в этой категории ничего нет в наличии.</div>';
+    }
+}
+
+if (onlyInStockEl) {
+    try {
+        const savedValue = localStorage.getItem(ONLY_IN_STOCK_STORAGE_KEY);
+        if (savedValue === 'true' || savedValue === 'false') {
+            onlyInStockEl.checked = savedValue === 'true';
+        }
+    } catch (error) {
+        console.warn('Не удалось сохранить настройку наличия:', error);
+    }
+
+    onlyInStockEl.addEventListener('change', () => {
+        try {
+            localStorage.setItem(ONLY_IN_STOCK_STORAGE_KEY, String(onlyInStockEl.checked));
+        } catch (error) {
+            console.warn('Не удалось сохранить настройку наличия:', error);
+        }
+        render();
+    });
 }
 
 // ==================================================
@@ -195,6 +251,7 @@ render = function() {
                 </div>
             `;
         }
+        applyAvailabilityFilter();
         return;
     }
     searchCategoryFilter = null;
@@ -210,6 +267,7 @@ render = function() {
             </div>
         `;
     }
+    applyAvailabilityFilter();
 };
 
 const sortEl = document.getElementById('sort');
@@ -256,3 +314,4 @@ addProductToCartFromModal = function(id) {
 };
 
 loadCategoryDescriptions();
+applyAvailabilityFilter();
