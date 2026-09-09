@@ -23,7 +23,7 @@ import commands
 
 def shop_keyboard():
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("🛍 Магазин", web_app=types.WebAppInfo(url=WEB_APP_URL)), types.KeyboardButton("📅 Записаться"))
+    keyboard.row(types.KeyboardButton("🛍 Магазин", web_app=types.WebAppInfo(url=WEB_APP_URL)), types.KeyboardButton("📅 Записаться", web_app=types.WebAppInfo(url="https://likagratrow.github.io/Booking/")))
     keyboard.row(types.KeyboardButton("🧵 Индивидуальный заказ"))
     keyboard.row(types.KeyboardButton("💬 Обратная связь"))
     return keyboard
