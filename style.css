@@ -191,20 +191,24 @@ body.lightbox-open { overflow: hidden; }
    ================================================== */
 
 .cart-item {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
+    display: flex !important;
     align-items: center;
     gap: 8px;
     margin-bottom: 10px !important;
+    width: 100%;
 }
 
 .cart-item > div:first-child {
+    flex: 1 1 auto;
     min-width: 0;
     margin-bottom: 0 !important;
 }
 
 .cart-item > div:nth-child(2) {
-    display: contents !important;
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
     margin-top: 0 !important;
 }
 
