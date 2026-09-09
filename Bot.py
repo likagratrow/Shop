@@ -100,7 +100,7 @@ def send_final_order_message(chat_id):
     order = orders_db.get(chat_id)
     if not order: return
     if order.get("repeat_order"):
-        text = "Спасибо!\n\nМастер свяжется с вами в рабочее время Пн-Пт 10-18."
+        text = "Спасибо!\n\nМастер свяжется с вами в рабочее время Пн–Пт 10-18."
     elif order.get("delivery_id") == "courier_ekb":
         text = "Спасибо!\n\nВсё-всё записал и передал менеджеру) Сборка заказа обычно занимает один рабочий день, затем мы с вами свяжемся и обрадуем, что готовы организовать доставку. Спасибо за заказ!"
     else:
@@ -237,7 +237,7 @@ def after_delivery_step(chat_id):
     elif order and (order.get("paid_status") or order.get("waiting_manager")):
         send_owner_notification(chat_id)
         if order.get("waiting_manager"):
-            bot.send_message(chat_id, "Хорошо 😊\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())
+            bot.send_message(chat_id, "Хорошо 😊\nМенеджер свяжется с вами в рабочее время Пн–Пт 10-18.", reply_markup=shop_keyboard())
         else:
             send_final_order_message(chat_id)
 
@@ -451,4 +451,5 @@ def text_handler(message):
         return
 
 
+print("Бот запущен")
 bot.infinity_polling()
