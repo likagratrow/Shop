@@ -6,7 +6,7 @@ from telebot import types
 INDIVIDUAL_ORDER_PROMPT = "Опишите, что бы вы хотели заказать?"
 MEDIA_PROMPT = "Есть ли у вас картинки, наброски или референсы?"
 CONTACT_PROMPT = "Спасибо! Для связи оставьте Telegram или, если удобнее, номер телефона 😊"
-SKIP_MEDIA_TEXT = "Пропустить"
+SKIP_MEDIA_TEXT = "Готово"
 
 
 def _owner_id():
@@ -91,7 +91,7 @@ def handle_media_choice(bot, chat_id, choice, orders_db):
     if choice == "Да":
         order["waiting_individual_media_choice"] = False
         order["waiting_individual_media"] = True
-        bot.send_message(chat_id, "Пришлите картинки, наброски или референсы. Можно отправить несколько файлов. Когда закончите — нажмите «Пропустить».", reply_markup=_media_keyboard())
+        bot.send_message(chat_id, "Пришлите картинки, наброски или референсы. Можно отправить несколько файлов. Когда закончите — нажмите «Готово».", reply_markup=_media_keyboard())
         return True
     if choice == "Нет":
         order["waiting_individual_media_choice"] = False
