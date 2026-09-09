@@ -1,5 +1,6 @@
 """Команды бота из меню Telegram."""
 
+import json
 import sys
 from telebot import types
 import individual_order
@@ -20,6 +21,28 @@ def _orders_db():
 
 def _web_app_url():
     return _main().WEB_APP_URL
+
+
+@_bot().message_handler(func=lambda message: _is_care_or_repair_order(message), content_types=["web_app_data"])
+def care_or_repair_web_app_data(message):
+    data = json.loads(message.web_app_data.data)
+    for product in data.get("products", []):
+        if isinstance(product, dict) and str(product.get("category", "")).strip().lower() in {"care", "repair"}:
+            product["category"] = "repeat"
+    message.web_app_data.data = json.dumps(data, ensure_ascii=False)
+    _main().web_app_data(message)
+
+
+def _is_care_or_repair_order(message):
+    try:
+        data = json.loads(message.web_app_data.data)
+        return any(
+            isinstance(product, dict)
+            and str(product.get("category", "")).strip().lower() in {"care", "repair"}
+            for product in data.get("products", [])
+        )
+    except Exception:
+        return False
 
 
 @_bot().message_handler(commands=["shop"])
