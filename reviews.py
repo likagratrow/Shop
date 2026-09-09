@@ -61,7 +61,11 @@ def handle_contact_choice(bot, chat_id, choice, orders_db, first_name, username)
     owner_text += f"💬 Telegram: @{username}\n" if username else "💬 Telegram: не указан\n"
     owner_text += f"📲 Связаться обратно: {'да' if wants_contact else 'нет'}"
     bot.send_message(owner_id, owner_text)
-    bot.send_message(chat_id, "Спасибо! Ваше сообщение передано.", reply_markup=_shop_keyboard())
+    if wants_contact:
+        client_text = "Спасибо! Ваше сообщение передано, мастер свяжется с вами в рабочее время: Пн–Пт, 10:00–18:00 (Екатеринбург)."
+    else:
+        client_text = "Спасибо! Ваше сообщение передано."
+    bot.send_message(chat_id, client_text, reply_markup=_shop_keyboard())
     order["completed"] = True
     return True
 
