@@ -47,9 +47,14 @@ def care_or_repair_web_app_data(message):
 
 @_bot().message_handler(commands=["shop"])
 def shop_command(message):
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    keyboard.row(types.KeyboardButton("🛍 Магазин", web_app=types.WebAppInfo(url=_web_app_url())))
-    _bot().send_message(message.chat.id, "🛍 Открыть магазин:", reply_markup=keyboard)
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.row(
+        types.InlineKeyboardButton(
+            "🛍 Магазин",
+            web_app=types.WebAppInfo(url=_web_app_url())
+        )
+    )
+    _bot().send_message(message.chat.id, "🛍 Магазин:", reply_markup=keyboard)
 
 
 @_bot().message_handler(commands=["booking"])
