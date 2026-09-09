@@ -1,4 +1,5 @@
 import json
+import re
 import urllib.request
 from telebot import types
 import telebot
@@ -80,6 +81,38 @@ def delivery_service_keyboard():
 def format_price(value):
     try: return f"{int(value):,}".replace(",", " ") + " ₽"
     except Exception: return f"{value} ₽"
+
+
+def format_order_items(items_text, products):
+    raw = str(items_text or "").strip()
+    if not raw or not isinstance(products, list) or not products:
+        return raw
+
+    lines = []
+    position = 0
+
+    for product in products:
+        match = re.search(r"\s*\(x\d+\)", raw[position:])
+        if not match:
+            return raw
+
+        name = raw[position:position + match.start()].strip().rstrip(",").strip()
+        category = str(product.get("category", "")).strip().lower() if isinstance(product, dict) else ""
+        quantity = product.get("quantity") if isinstance(product, dict) else None
+
+        if category == "items":
+            lines.append(f"{name} (x{quantity})")
+        else:
+            lines.append(name)
+
+        position += match.end()
+        if raw[position:position + 2] == ", ":
+            position += 2
+
+    if raw[position:].strip():
+        return raw
+
+    return "\n".join(lines)
 
 
 def remove_inline_buttons(call):
@@ -281,7 +314,7 @@ def web_app_data(message):
         payable_total = total - repeat_product_total if mixed_order else total
         if payable_total < 0: payable_total = 0
         order = {
-            "items": data.get("items", ""), "products": products, "product_total": total,
+            "items": format_order_items(data.get("items", ""), products), "products": products, "product_total": total,
             "payable_total": payable_total, "repeat_product_total": repeat_product_total,
             "total": payable_total, "needs_delivery": bool(data.get("needs_delivery", False)),
             "repeat_order": repeat_order, "mixed_order": mixed_order,
