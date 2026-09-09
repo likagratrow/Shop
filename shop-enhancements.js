@@ -12,16 +12,16 @@ let categoryBeforeSearch = 'items';
 
 const enhancementStyle = document.createElement('style');
 enhancementStyle.textContent = `
-    .categories { position: sticky; top: 0; z-index: 6; padding: 8px 0; background: var(--tg-theme-bg-color, #fff); }
+    .categories { position: sticky; top: 0; z-index: 6; padding: 8px 0; background: var(--tg-theme-bg-color, #fff); display: flex; flex-wrap: wrap; justify-content: center; overflow-x: visible; }
     .category-description { margin: 0 0 15px; padding: 10px 12px; border-radius: 10px; background: var(--tg-theme-secondary-bg-color, #f5f5f5); color: var(--tg-theme-text-color, #000); font-size: 14px; line-height: 1.45; }
     .search-wrap { position: relative; flex: 1; min-width: 0; }
     .search-wrap #search { width: 100%; box-sizing: border-box; padding-right: 36px; }
     .search-clear { position: absolute; top: 50%; right: 8px; width: 28px; height: 28px; transform: translateY(-50%); border: none; background: transparent; color: #888; font-size: 22px; line-height: 28px; padding: 0; cursor: pointer; }
     .search-clear[hidden] { display: none; }
     .cat-btn { position: relative; min-width: 92px; padding-left: 14px; padding-right: 14px; }
-    .categories:not(.searching) .cat-btn:not(.active) { background: rgba(36, 129, 204, 0.18) !important; color: #fff !important; }
-    .categories.searching .cat-btn { background: rgba(36, 129, 204, 0.18) !important; color: #fff !important; }
-    .categories.searching .cat-btn.active { background: rgba(36, 129, 204, 0.18) !important; color: #fff !important; }
+    .categories:not(.searching) .cat-btn:not(.active) { background: rgba(36, 129, 204, 0.38) !important; color: #fff !important; }
+    .categories.searching .cat-btn { background: rgba(36, 129, 204, 0.38) !important; color: #fff !important; }
+    .categories.searching .cat-btn.active { background: rgba(36, 129, 204, 0.38) !important; color: #fff !important; }
     .categories.searching .cat-btn.category-filter-active { background: var(--tg-theme-button-color, #2481cc) !important; color: var(--tg-theme-button-text-color, #fff) !important; }
     .cat-btn .category-clear { display: none; margin-left: 8px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: currentColor; font-size: 20px; line-height: 18px; vertical-align: middle; cursor: pointer; }
     .cat-btn.category-filter-active .category-clear { display: inline-block; }
