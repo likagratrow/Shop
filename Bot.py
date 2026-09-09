@@ -17,6 +17,7 @@ MIXED_CONTACT_TEXT = "Пожалуйста оставьте контакт (tele
 
 bot = telebot.TeleBot(BOT_TOKEN)
 orders_db = {}
+import commands
 
 
 def shop_keyboard():
