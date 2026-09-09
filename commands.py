@@ -2,9 +2,46 @@
 
 import json
 import sys
+import os
+import threading
+import time
+import telebot
 from telebot import types
 import individual_order
 import reviews
+
+
+POLLING_WATCHDOG_TIMEOUT = 120
+_polling_last_activity = time.monotonic()
+
+
+def _polling_get_updates_with_watchdog(original_get_updates):
+    def wrapped(self, *args, **kwargs):
+        global _polling_last_activity
+        _polling_last_activity = time.monotonic()
+        try:
+            return original_get_updates(self, *args, **kwargs)
+        finally:
+            _polling_last_activity = time.monotonic()
+
+    return wrapped
+
+
+def _polling_watchdog():
+    while True:
+        time.sleep(15)
+        silence = time.monotonic() - _polling_last_activity
+        if silence >= POLLING_WATCHDOG_TIMEOUT:
+            print(
+                f"Polling не отвечает {int(silence)} сек. "
+                "Перезапускаю бота..."
+            )
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
+_original_get_updates = telebot.TeleBot.get_updates
+telebot.TeleBot.get_updates = _polling_get_updates_with_watchdog(_original_get_updates)
+threading.Thread(target=_polling_watchdog, daemon=True).start()
 
 
 def _main():
