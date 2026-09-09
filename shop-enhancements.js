@@ -79,7 +79,9 @@ enhancementStyle.textContent = `
     .close-btn::before {
         inset: 0;
     }
+    .cat-btn::before { inset: -5px 0; }
     .search-clear::before { inset: -8px; }
+    .card-quantity { overflow: visible; }
     .card-quantity-btn::before { inset: -4px -3px; }
     .cart-minus::before,
     .cart-plus::before,
