@@ -264,13 +264,49 @@ function openProductModal(id) {
     const content = document.getElementById('product-modal-content');
     if (!modal || !content) return;
     const images = getProductImages(product);
-    const imagesHtml = images.length ? `<div class="product-modal-gallery">${images.map(src => `<img src="${escapeHtml(getImageUrl(src))}" alt="${escapeHtml(product.name)}" onerror="this.onerror=null;this.src='images/placeholder.jpg';">`).join('')}</div>` : '';
+    const imagesHtml = images.length ? `<div class="product-modal-gallery">${images.map((src, index) => `<img src="${escapeHtml(getImageUrl(src))}" alt="${escapeHtml(product.name)}" onclick="openImageLightbox(${JSON.stringify(product.id)}, ${index}); event.stopPropagation();" onerror="this.onerror=null;this.src='images/placeholder.jpg';">`).join('')}</div>` : '';
     const currentQuantity = getCartQuantity(product.id);
     const displayedQuantity = currentQuantity > 0 ? currentQuantity : product.balance > 0 ? 1 : 0;
     const plusDisabled = product.balance !== Infinity && displayedQuantity >= product.balance;
     const quantityHtml = product.category === 'items' ? `<div class="product-quantity"><button type="button" onclick="changeProductQuantity(${JSON.stringify(product.id)}, -1)">−</button><span id="product-quantity-value">${displayedQuantity}</span><button type="button" ${plusDisabled || product.balance <= 0 ? 'disabled' : ''} onclick="changeProductQuantity(${JSON.stringify(product.id)}, 1)">+</button></div>` : '';
     content.innerHTML = `${imagesHtml}<h2 class="product-modal-title">${escapeHtml(product.name)}</h2><div class="product-modal-description">${escapeHtml(product.description)}</div><div class="product-modal-price">${formatPrice(product.price)} ₽</div><div class="product-modal-stock">${escapeHtml(getStockText(product))}</div>${quantityHtml}<button type="button" class="product-add-btn" ${product.balance <= 0 ? 'disabled' : ''} onclick="addProductToCartFromModal(${JSON.stringify(product.id)})">${product.balance <= 0 ? 'Нет в наличии' : currentQuantity > 0 ? 'Добавить ещё' : 'В корзину'}</button>`;
     modal.style.display = 'block';
+}
+
+function openImageLightbox(productId, startIndex) {
+    const product = products.find(item => String(item.id) === String(productId));
+    if (!product) return;
+    const images = getProductImages(product);
+    if (!images.length) return;
+
+    let lightbox = document.getElementById('image-lightbox');
+    if (!lightbox) {
+        lightbox = document.createElement('div');
+        lightbox.id = 'image-lightbox';
+        lightbox.className = 'image-lightbox';
+        document.body.appendChild(lightbox);
+    }
+
+    lightbox.innerHTML = `<div class="image-lightbox-track">${images.map((src, index) => `<div class="image-lightbox-slide"><img src="${escapeHtml(getImageUrl(src))}" alt="${escapeHtml(product.name)}" onclick="event.stopPropagation();" onerror="this.onerror=null;this.src='images/placeholder.jpg';"></div>`).join('')}</div>`;
+    lightbox.onclick = event => {
+        if (event.target === lightbox || event.target.classList.contains('image-lightbox-slide')) {
+            closeImageLightbox();
+        }
+    };
+    lightbox.style.display = 'flex';
+    document.body.classList.add('lightbox-open');
+
+    const track = lightbox.querySelector('.image-lightbox-track');
+    if (track) {
+        const slide = track.children[Math.max(0, Math.min(Number(startIndex) || 0, images.length - 1))];
+        if (slide) slide.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'start' });
+    }
+}
+
+function closeImageLightbox() {
+    const lightbox = document.getElementById('image-lightbox');
+    if (lightbox) lightbox.style.display = 'none';
+    document.body.classList.remove('lightbox-open');
 }
 
 function closeProductModal() { const modal = document.getElementById('product-modal'); if (modal) modal.style.display = 'none'; }
@@ -320,5 +356,8 @@ function sendOrder() {
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('search')?.addEventListener('input', render);
     document.getElementById('sort')?.addEventListener('change', render);
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') closeImageLightbox();
+    });
     loadProducts();
 });
