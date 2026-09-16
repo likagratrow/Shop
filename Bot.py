@@ -10,7 +10,7 @@ import reviews
 YOUR_TELEGRAM_ID = 5219493908
 WEB_APP_URL = "https://likagratrow.github.io/Shop/"
 SHEET_ID = "1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk"
-STOCK_API_URL = "https://script.google.com/macros/s/AKfycbwwkQeC1U82T0LoYv9umYrc-pmeD0KSZP0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg/exec"
+STOCK_API_URL = "https://script.google.com/macros/s/AKfycbwwKQeC1U82T0LoYv9umYrc-pmeD0KSZP0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg/exec"
 DELIVERY_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?sheet=%D0%94%D0%BE%D1%81%D1%82%D0%B0%D0%B2%D0%BA%D0%B0"
 CONTACT_TEXT = "Спасибо! Для завершения оформления заказа отправьте номер телефона или, если удобнее, свяжемся через Telegram"
 REPEAT_CONTACT_TEXT = "Пожалуйста оставьте контакт (telegram или если удобнее, телефон), и мы свяжемся с вами по поводу изготовления на заказ. Спасибо!"
@@ -22,11 +22,15 @@ import commands
 
 
 def shop_keyboard():
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.row(types.KeyboardButton("🛍 Магазин", web_app=types.WebAppInfo(url=WEB_APP_URL)), types.KeyboardButton("📅 Записаться", web_app=types.WebAppInfo(url="https://likagratrow.github.io/Booking/")))
-    keyboard.row(types.KeyboardButton("🧵 Индивидуальный заказ"))
-    keyboard.row(types.KeyboardButton("💬 Обратная связь"))
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.row(types.InlineKeyboardButton("🛍 Магазин", web_app=types.WebAppInfo(url=WEB_APP_URL)), types.InlineKeyboardButton("📅 Записаться", web_app=types.WebAppInfo(url="https://likagratrow.github.io/Booking/")))
+    keyboard.row(types.InlineKeyboardButton("🧵 Индивидуальный заказ", callback_data="menu_individual"))
+    keyboard.row(types.InlineKeyboardButton("💬 Обратная связь", callback_data="menu_feedback"))
     return keyboard
+
+
+individual_order._shop_keyboard = shop_keyboard
+reviews._shop_keyboard = shop_keyboard
 
 
 def contact_keyboard():
@@ -278,22 +282,20 @@ def after_delivery_step(chat_id):
 
 @bot.message_handler(commands=["start"])
 def start(message):
-    bot.send_message(message.chat.id, "Добро пожаловать в Странные Вещи.\nВыберите, что хотите сделать.", reply_markup=shop_keyboard())
+    bot.send_message(message.chat.id, "Добро пожаловать в Странные Вещи.", reply_markup=types.ReplyKeyboardRemove())
+    bot.send_message(message.chat.id, "Выберите, что хотите сделать.", reply_markup=shop_keyboard())
 
 
-@bot.message_handler(func=lambda message: message.text == "📅 Записаться")
-def booking(message):
-    bot.send_message(message.chat.id, "Вы можете записаться на мастер-класс или Диоген по адресу: https://dikidi.ru/2143045?p=0.pi-si&o=13&s=23280541")
+@bot.callback_query_handler(func=lambda call: call.data == "menu_individual")
+def individual_order_callback(call):
+    bot.answer_callback_query(call.id)
+    individual_order.start(bot, call.message.chat.id, orders_db)
 
 
-@bot.message_handler(func=lambda message: message.text == "🧵 Индивидуальный заказ")
-def individual_order_handler(message):
-    individual_order.start(bot, message.chat.id, orders_db)
-
-
-@bot.message_handler(func=lambda message: message.text == "💬 Обратная связь")
-def feedback_handler(message):
-    reviews.start(bot, message.chat.id, orders_db)
+@bot.callback_query_handler(func=lambda call: call.data == "menu_feedback")
+def feedback_callback(call):
+    bot.answer_callback_query(call.id)
+    reviews.start(bot, call.message.chat.id, orders_db)
 
 
 @bot.message_handler(content_types=["web_app_data"])
