@@ -1,0 +1,285 @@
+name: Cleanup Shop v4
+
+on:
+  push:
+    paths:
+      - '.github/workflows/cleanup-shop-v4.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: "!contains(github.event.head_commit.message, 'Apply Shop v4 cleanup')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cleanup legacy bot flow and fix JS
+        shell: python
+        run: |
+          from pathlib import Path
+          import py_compile
+          import re
+          import subprocess
+
+          def replace_regex(path, pattern, replacement, flags=re.S):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              new_text, count = re.subn(pattern, replacement, text, flags=flags)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected 1 regex match, got {count}: {pattern[:100]!r}')
+              p.write_text(new_text, encoding='utf-8')
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              if old not in text:
+                  raise SystemExit(f'{path}: expected text not found: {old[:100]!r}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          # ------------------------------------------------------------
+          # Bot.py: remove all legacy bot-side delivery/web_app_data logic.
+          # ------------------------------------------------------------
+          bot = Path('Bot.py')
+          text = bot.read_text(encoding='utf-8')
+
+          text = text.replace('import re\n', '', 1)
+          text = re.sub(r'^DELIVERY_SHEET_URL = .*\n', '', text, count=1, flags=re.M)
+
+          text = re.sub(r'\n\ndef load_delivery_options\(\):.*?\n\ndef format_price', '\n\ndef format_price', text, count=1, flags=re.S)
+          text = re.sub(r'\n\ndef format_order_items\(items_text, products\):.*?\n\ndef remove_inline_buttons', '\n\ndef remove_inline_buttons', text, count=1, flags=re.S)
+          text = re.sub(r'\n\ndef get_delivery_address_prompt\(delivery_id\):.*?\n\ndef send_payment_message', '\n', text, count=1, flags=re.S)
+          text = re.sub(r'\n\ndef send_payment_message\(chat_id\):.*?\n\ndef start_delivery', '\n\ndef start_delivery', text, count=1, flags=re.S)
+          text = re.sub(r'\n\ndef start_delivery\(chat_id(?:, reason=None)?\):.*?\n\ndef after_delivery_step', '\n', text, count=1, flags=re.S)
+          text = re.sub(r'\n\ndef after_delivery_step\(chat_id\):.*?\n\n@bot\.message_handler\(commands=\["start"\]\)', '\n\n@bot.message_handler(commands=["start"])', text, count=1, flags=re.S)
+          text = re.sub(r'\n@bot\.message_handler\(content_types=\["web_app_data"\]\)\ndef web_app_data\(message\):.*?\n\n@bot\.callback_query_handler\(func=lambda call: call\.data == "paid"\)', '\n@bot.callback_query_handler(func=lambda call: call.data == "paid")', text, count=1, flags=re.S)
+
+          new_handle_contact = r'''@bot.message_handler(content_types=["contact"])
+          def handle_contact(message):
+              chat_id = message.chat.id
+              order = orders_db.get(chat_id)
+              if not order or not order.get("waiting_contact"):
+                  return
+
+              order["phone"] = message.contact.phone_number
+              order["waiting_contact"] = False
+
+              if order.get("contact_reason"):
+                  send_owner_notification(chat_id)
+                  bot.send_message(chat_id, "Спасибо! Я передал информацию менеджеру, мы свяжемся с вами для уточнения деталей.", reply_markup=shop_keyboard())
+                  return
+
+              if order.get("repeat_order"):
+                  finish_repeat_order(chat_id)
+                  return
+
+              if order.get("mixed_order"):
+                  send_owner_notification(chat_id)
+                  if order.get("paid_status"):
+                      send_final_order_message(chat_id)
+                  elif order.get("waiting_manager"):
+                      bot.send_message(chat_id, "Хорошо 😊\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())
+                  return
+
+              if order.get("paid_status"):
+                  send_owner_notification(chat_id)
+                  send_final_order_message(chat_id)
+              elif order.get("waiting_manager"):
+                  send_owner_notification(chat_id)
+                  bot.send_message(chat_id, "Хорошо 😊\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())
+
+
+          @bot.message_handler(func=lambda message: message.text == "💬 Не отправлять номер, связаться в ТГ")
+          def no_phone(message):
+              chat_id = message.chat.id
+              order = orders_db.get(chat_id)
+              if not order or not order.get("waiting_contact"):
+                  return
+
+              order["phone"] = None
+              order["waiting_contact"] = False
+
+              if order.get("contact_reason"):
+                  send_owner_notification(chat_id)
+                  bot.send_message(chat_id, "Спасибо! Я передал информацию менеджеру, мы свяжемся с вами для уточнения деталей.", reply_markup=shop_keyboard())
+                  return
+
+              if order.get("repeat_order"):
+                  finish_repeat_order(chat_id)
+                  return
+
+              if order.get("mixed_order"):
+                  send_owner_notification(chat_id)
+                  if order.get("paid_status"):
+                      send_final_order_message(chat_id)
+                  elif order.get("waiting_manager"):
+                      bot.send_message(chat_id, "Хорошо 😊\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())
+                  return
+
+              if order.get("paid_status"):
+                  send_owner_notification(chat_id)
+                  send_final_order_message(chat_id)
+              elif order.get("waiting_manager"):
+                  send_owner_notification(chat_id)
+                  bot.send_message(chat_id, "Хорошо 😊\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())
+
+
+          @bot.message_handler(func=lambda message: True)
+          def text_handler(message):
+              chat_id = message.chat.id
+              order = orders_db.get(chat_id)
+              if order and order.get("waiting_individual_description"):
+                  order["individual_description"] = message.text
+                  order["waiting_individual_description"] = False
+                  request_contact(chat_id)
+                  return
+              if order and order.get("waiting_feedback"):
+                  order["feedback_text"] = message.text
+                  order["waiting_feedback"] = False
+                  if message.from_user.username:
+                      bot.send_message(YOUR_TELEGRAM_ID, f"💬 НОВАЯ ОБРАТНАЯ СВЯЗЬ\n\n{message.text}\n\n👤 Клиент: {message.from_user.first_name or ''}\n💬 Telegram: @{message.from_user.username}")
+                  else:
+                      bot.send_message(YOUR_TELEGRAM_ID, f"💬 НОВАЯ ОБРАТНАЯ СВЯЗЬ\n\n{message.text}\n\n👤 Клиент: {message.from_user.first_name or ''}")
+                  bot.send_message(chat_id, "Спасибо! Ваше сообщение передано.", reply_markup=shop_keyboard())
+                  return
+'''
+          text = re.sub(r'@bot\.message_handler\(content_types=\["contact"\]\).*?\nprint\("Бот запущен"\)', new_handle_contact + '\n\nprint("Бот запущен")', text, count=1, flags=re.S)
+
+          bot.write_text(text, encoding='utf-8')
+
+          # ------------------------------------------------------------
+          # Owner notification: include country too.
+          # ------------------------------------------------------------
+          replace_once(
+              'Bot.py',
+              '    delivery_service = order.get("delivery_service")\n    delivery_address = order.get("delivery_address")\n',
+              '    delivery_service = order.get("delivery_service")\n    delivery_country = order.get("delivery_country")\n    delivery_address = order.get("delivery_address")\n'
+          )
+          replace_once(
+              'Bot.py',
+              '    if delivery_service: owner_text += f"📦 Служба доставки: {delivery_service}\\n"\n    if delivery_address: owner_text += f"📍 Куда доставить: {delivery_address}\\n"\n',
+              '    if delivery_service: owner_text += f"📦 Служба доставки: {delivery_service}\\n"\n    if delivery_country: owner_text += f"🌍 Страна: {delivery_country}\\n"\n    if delivery_address: owner_text += f"📍 Куда доставить: {delivery_address}\\n"\n'
+          )
+
+          # ------------------------------------------------------------
+          # Orders: replace sendOrderMessage with syntax-safe template strings.
+          # ------------------------------------------------------------
+          orders = r'''function sendOrderMessage(chatId, orderId, itemsText, products, totals) {
+            const botToken = getBotToken();
+            const delivery = totals.delivery || {};
+
+            let text = `Ваш заказ №${orderId}:\n\n${itemsText}\n\n`;
+
+            if (delivery.method_id) {
+              text += `🚚 Доставка: ${delivery.method_title}`;
+              if (delivery.price !== null && delivery.price !== undefined) {
+                text += ` — ${formatMoney(delivery.price)} ₽`;
+              } else {
+                text += ' — договорная';
+              }
+              text += '\n';
+              if (delivery.service_title) text += `📦 Служба доставки: ${delivery.service_title}\n`;
+              if (delivery.country) text += `🌍 Страна: ${delivery.country}\n`;
+              if (delivery.address) text += `📍 Адрес: ${delivery.address}\n`;
+              text += '\n';
+            }
+
+            if (totals.repeatOrder) {
+              text += '⚒️ Заказ на изготовление/сервис.\n\nОставьте контакт, и мастер свяжется с вами по поводу заказа.';
+              telegramApi(botToken, 'sendMessage', {
+                chat_id: chatId,
+                text: text,
+                reply_markup: JSON.stringify({
+                  inline_keyboard: [[
+                    {text: '📞 Оставить контакт', callback_data: 'order_contact'}
+                  ]]
+                })
+              });
+              return;
+            }
+
+            text += `💰 Товары к оплате: <b>${formatMoney(totals.payableGoodsTotal)} ₽</b>\n`;
+            if (totals.mixedOrder && totals.repeatTotal > 0) {
+              text += `⚒️ На заказ: ${formatMoney(totals.repeatTotal)} ₽\n`;
+            }
+
+            if (delivery.price === null && delivery.method_id) {
+              text += `💰 Итого: <b>${formatMoney(totals.payableTotal)} ₽</b> + доставка по согласованию\n\n`;
+            } else {
+              text += `💰 Итого: <b>${formatMoney(totals.total)} ₽</b>\n\n`;
+            }
+
+            text += '💳 Оплата переводом на Сбербанк:\n' +
+              '📱 +79089147913\n' +
+              '👤 Получатель: Лия П.\n\n' +
+              '📦 Заказ будет собран после оплаты.\n\n' +
+              'Вы можете перевести оплату сейчас или дождаться связи с менеджером в рабочее время:\n' +
+              'Пн–Пт, 10:00–18:00 (Екатеринбург).';
+
+            telegramApi(botToken, 'sendMessage', {
+              chat_id: chatId,
+              text: text,
+              parse_mode: 'HTML',
+              reply_markup: JSON.stringify({
+                inline_keyboard: [[
+                  {text: '💳 Я оплатил', callback_data: 'paid'},
+                  {text: '⏳ Подожду менеджера', callback_data: 'wait_manager'}
+                ]]
+              })
+            });
+          }
+          '''
+          replace_regex('Orders', r'function sendOrderMessage\(chatId, orderId, itemsText, products, totals\) \{.*?\n\}\n\nfunction getOrderForBot', orders + '\nfunction getOrderForBot')
+
+          # ------------------------------------------------------------
+          # app.js: catalog cards/modals use only buttons, quantities remain in cart.
+          # Also read service subcategory directly from column O.
+          # ------------------------------------------------------------
+          app = Path('app.js')
+          app_text = app.read_text(encoding='utf-8')
+          app_text = app_text.replace("                image4: String(value(9, '').trim()\n", "                image4: String(value(9, '').trim(),),\n                subcategory: String(value(14, '')).trim()\n", 1) if "subcategory:" not in app_text else app_text
+
+          app_text = re.sub(
+              r'function getCardButtonHtml\(product\) \{.*?\n\}\n\nfunction updateProductCard',
+              '''function getCardButtonHtml(product) {
+                  if (product.balance <= 0) return `<button type="button" class="card-cart-btn" disabled>Нет в наличии</button>`;
+                  const quantity = getCartQuantity(product.id);
+                  return `<button type="button" class="card-cart-btn" onclick="event.stopPropagation(); addToCart(${JSON.stringify(product.id)});">${quantity > 0 ? 'В корзине' : 'В корзину'}</button>`;
+              }
+
+              function updateProductCard''',
+              app_text,
+              count=1,
+              flags=re.S
+          )
+
+          app_text = re.sub(
+              r"    const currentQuantity = getCartQuantity\(product.id\);\n    const displayedQuantity = currentQuantity > 0 \? currentQuantity : product.balance > 0 \? 1 : 0;\n    const plusDisabled = product.balance !== Infinity && displayedQuantity >= product.balance;\n    const quantityHtml = product.category === 'items' \? .*? : '';",
+              "    const currentQuantity = getCartQuantity(product.id);\n    const quantityHtml = '';",
+              app_text,
+              count=1,
+              flags=re.S
+          )
+          app_text = app_text.replace("onclick=\\\"addProductToCartFromModal(${JSON.stringify(product.id)})\\\">${product.balance <= 0 ? 'Нет в наличии' : currentQuantity > 0 ? 'Добавить ещё' : 'В корзину'}", "onclick=\\\"addProductToCartFromModal(${JSON.stringify(product.id)})\\\">${product.balance <= 0 ? 'Нет в наличии' : 'В корзину'}", 1)
+          app.write_text(app_text, encoding='utf-8')
+
+          # Syntax checks: Python and Node are available on GitHub runners.
+          py_compile.compile('Bot.py', doraise=True)
+          py_compile.compile('commands.py', doraise=True)
+          py_compile.compile('orders_bridge.py', doraise=True)
+          subprocess.run(['node', '--check', 'Orders'], check=True)
+          subprocess.run(['node', '--check', 'app.js'], check=True)
+          subprocess.run(['node', '--check', 'delivery.js'], check=True)
+          print('Python and JavaScript syntax OK')
+
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Bot.py Orders app.js
+          git rm -f .github/workflows/cleanup-shop-v4.yml
+          git commit -m "Apply Shop v4 cleanup"
+          git push
