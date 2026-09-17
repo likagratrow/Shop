@@ -35,11 +35,9 @@ const COMPOSITION_HEADERS = [
   'ID заказа', 'Товар', 'Категория', 'Количество', 'Цена', 'Сумма'
 ];
 
-
 function doGet(e) {
   return jsonResponse({ok: true, service: 'Orders'});
 }
-
 
 function doPost(e) {
   try {
@@ -68,7 +66,6 @@ function doPost(e) {
     });
   }
 }
-
 
 function createOrder(data) {
   const initData = String(data.initData || '').trim();
@@ -154,7 +151,6 @@ function createOrder(data) {
   }
 }
 
-
 function normalizeRuntimeProducts(products) {
   return products.map(function(product) {
     const normalized = Object.assign({}, product);
@@ -169,7 +165,6 @@ function normalizeRuntimeProducts(products) {
     return normalized;
   });
 }
-
 
 function sendOrderMessage(chatId, orderId, itemsText, products, total) {
   const botToken = getBotToken();
@@ -235,7 +230,6 @@ function sendOrderMessage(chatId, orderId, itemsText, products, total) {
     reply_markup: JSON.stringify(replyMarkup)
   });
 }
-
 
 function getOrderForBot(data) {
   const botToken = getBotToken();
@@ -311,7 +305,6 @@ function getOrderForBot(data) {
   };
 }
 
-
 function findOrderRow(sheet, orderId) {
   if (sheet.getLastRow() < 2) return null;
 
@@ -325,7 +318,6 @@ function findOrderRow(sheet, orderId) {
 
   return null;
 }
-
 
 function storeOrderPayload(orderId, telegramId, products) {
   const payload = {
@@ -347,7 +339,6 @@ function storeOrderPayload(orderId, telegramId, products) {
     JSON.stringify(payload)
   );
 }
-
 
 function loadOrderPayload(orderId) {
   const key = ORDER_PAYLOAD_PREFIX + orderId;
@@ -373,7 +364,6 @@ function loadOrderPayload(orderId) {
   }
 }
 
-
 function cleanupExpiredOrderPayloads() {
   const properties = PropertiesService.getScriptProperties().getProperties();
   const now = Date.now();
@@ -393,7 +383,6 @@ function cleanupExpiredOrderPayloads() {
     }
   });
 }
-
 
 function telegramApi(botToken, method, payload) {
   const url = 'https://api.telegram.org/bot' + botToken + '/' + method;
@@ -425,7 +414,6 @@ function telegramApi(botToken, method, payload) {
 
   return json.result;
 }
-
 
 function validateTelegramInitData(initData) {
   const botToken = getBotToken();
@@ -459,7 +447,10 @@ function validateTelegramInitData(initData) {
   );
 
   const calculatedHash = bytesToHex(
-    Utilities.computeHmacSha256Signature(dataCheckString, secretKey)
+    Utilities.computeHmacSha256Signature(
+      Utilities.newBlob(dataCheckString).getBytes(),
+      secretKey
+    )
   );
 
   if (!constantTimeEqual(calculatedHash, receivedHash)) {
@@ -489,7 +480,6 @@ function validateTelegramInitData(initData) {
   }
 }
 
-
 function nextOrderId(sheet) {
   const now = new Date();
   const timezone = Session.getScriptTimeZone();
@@ -516,18 +506,15 @@ function nextOrderId(sheet) {
   return prefix + String(maxSequence + 1).padStart(2, '0');
 }
 
-
 function calculateTotal(products) {
   return products.reduce(function(sum, product) {
     return sum + normalizeMoney(product.price) * normalizeQuantity(product.quantity);
   }, 0);
 }
 
-
 function calculateItemsTotal(products) {
   return calculateCategoryTotal(products, 'items');
 }
-
 
 function calculateCategoryTotal(products, targetCategory) {
   return products.reduce(function(sum, product) {
@@ -538,13 +525,11 @@ function calculateCategoryTotal(products, targetCategory) {
   }, 0);
 }
 
-
 function buildItemsText(itemsText, products) {
   const raw = String(itemsText || '').trim();
   if (raw) return raw;
   return buildItemsTextFromProducts(products);
 }
-
 
 function buildItemsTextFromProducts(products) {
   return products.map(function(product) {
@@ -558,7 +543,6 @@ function buildItemsTextFromProducts(products) {
   }).join('\n');
 }
 
-
 function normalizeQuantity(value) {
   const n = Number(value);
   if (!Number.isInteger(n) || n < 1) {
@@ -566,7 +550,6 @@ function normalizeQuantity(value) {
   }
   return n;
 }
-
 
 function normalizeMoney(value) {
   const n = Number(value);
@@ -576,24 +559,20 @@ function normalizeMoney(value) {
   return n;
 }
 
-
 function formatMoney(value) {
   return Number(value || 0).toLocaleString('ru-RU');
 }
-
 
 function formatTelegramUsername(username) {
   const value = String(username || '').trim();
   return value ? (value.charAt(0) === '@' ? value : '@' + value) : '';
 }
 
-
 function getBotToken() {
   const token = PropertiesService.getScriptProperties().getProperty(BOT_TOKEN_PROPERTY);
   if (!token) throw new Error('В Script Properties не задан BOT_TOKEN.');
   return token;
 }
-
 
 function getRequiredSheet(ss, name, headers) {
   let sheet = ss.getSheetByName(name);
@@ -617,14 +596,12 @@ function getRequiredSheet(ss, name, headers) {
   return sheet;
 }
 
-
 function bytesToHex(bytes) {
   return bytes.map(function(byte) {
     const value = byte < 0 ? byte + 256 : byte;
     return ('0' + value.toString(16)).slice(-2);
   }).join('');
 }
-
 
 function constantTimeEqual(a, b) {
   a = String(a || '').toLowerCase();
@@ -640,7 +617,6 @@ function constantTimeEqual(a, b) {
 
   return result === 0;
 }
-
 
 function jsonResponse(data) {
   return ContentService
