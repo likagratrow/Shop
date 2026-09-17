@@ -82,6 +82,8 @@ function createOrder(data) {
   const products = Array.isArray(data.products) ? data.products : [];
   if (!products.length) throw new Error('В заказе нет товаров.');
 
+  const runtimeProducts = normalizeRuntimeProducts(products);
+
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
 
@@ -96,9 +98,9 @@ function createOrder(data) {
     const now = new Date();
     const telegramId = String(telegramUser.id);
     const username = formatTelegramUsername(telegramUser.username);
-    const total = calculateTotal(products);
-    const itemsTotal = calculateItemsTotal(products);
-    const itemsText = buildItemsText(data.items, products);
+    const total = calculateTotal(runtimeProducts);
+    const itemsTotal = calculateItemsTotal(runtimeProducts);
+    const itemsText = buildItemsText(data.items, runtimeProducts);
 
     ordersSheet.appendRow([
       orderId,
@@ -138,8 +140,8 @@ function createOrder(data) {
         .setValues(compositionRows);
     }
 
-    storeOrderPayload(orderId, telegramId, products);
-    sendOrderMessage(telegramId, orderId, itemsText, products, total);
+    storeOrderPayload(orderId, telegramId, runtimeProducts);
+    sendOrderMessage(telegramId, orderId, itemsText, runtimeProducts, total);
 
     return {
       ok: true,
@@ -150,6 +152,22 @@ function createOrder(data) {
   } finally {
     lock.releaseLock();
   }
+}
+
+
+function normalizeRuntimeProducts(products) {
+  return products.map(function(product) {
+    const normalized = Object.assign({}, product);
+    const category = String(product.category || '').trim().toLowerCase();
+
+    if (category === 'care' || category === 'repair') {
+      normalized.category = 'repeat';
+    } else {
+      normalized.category = category;
+    }
+
+    return normalized;
+  });
 }
 
 
