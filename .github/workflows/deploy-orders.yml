@@ -26,7 +26,11 @@ jobs:
           set -euo pipefail
           mkdir -p apps-script
           cp Orders apps-script/Orders.gs
-          printf '%s' '${{ secrets.ORDERS_CLASP_JSON }}' > apps-script/.clasp.json
+          cat > apps-script/.clasp.json <<'EOF'
+          {
+            "scriptId": "14RxieTk5ngsUaxwdb2IC3OzkpiFcCd7-1Xh0ydwoH0F3-ENL5ZuBU48H"
+          }
+          EOF
           cat > apps-script/appsscript.json <<'EOF'
           {
             "timeZone": "Asia/Yekaterinburg",
@@ -53,10 +57,9 @@ jobs:
       - name: Update existing deployment
         working-directory: apps-script
         env:
-          ORDERS_DEPLOYMENT_ID: ${{ secrets.ORDERS_DEPLOYMENT_ID }}
           COMMIT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           npx @google/clasp@latest create-deployment \
-            --deploymentId "$ORDERS_DEPLOYMENT_ID" \
+            --deploymentId "AKfycbz2XQn7s0e_irZ2rRsvcXb_I7hKp_DxNXTYsZlIt2TATE58IiqJ9AyjUKj9f09-CII9" \
             --description "GitHub ${COMMIT_SHA:0:7}"
