@@ -24,12 +24,13 @@
         <button class="cat-btn active" onclick="filterCategory('all', this)">Все</button>
         <button class="cat-btn" onclick="filterCategory('items', this)">Товары</button>
         <button class="cat-btn" onclick="filterCategory('repeat', this)">На заказ</button>
-        <button class="cat-btn" onclick="filterCategory('care', this)">Уход</button>
-        <button class="cat-btn" onclick="filterCategory('repair', this)">Ремонт</button>
+        <button class="cat-btn" onclick="filterCategory('service', this)">Сервис</button>
         <label class="availability-filter"><input type="checkbox" id="only-in-stock" checked><span>Только в наличии</span></label>
         <button class="cat-btn" onclick="filterCategory('diogen', this)">Диоген</button>
         <button class="cat-btn" onclick="filterCategory('lockers', this)">Локеры</button>
     </div>
+
+    <div id="service-subcategories" class="service-subcategories" hidden></div>
 
     <div id="products" class="products-grid">Загрузка товаров...</div>
 
@@ -43,8 +44,9 @@
         <div class="modal-content">
             <h2>Ваша корзина</h2>
             <div id="cart-items"></div>
-            <h3>Итого: <span id="cart-total">0</span> ₽</h3>
-            <button class="order-btn" onclick="sendOrder()">Оформить перевод</button>
+            <div id="cart-checkout" class="cart-checkout" hidden></div>
+            <h3 id="cart-total-line">Итого: <span id="cart-total">0</span> ₽</h3>
+            <button class="order-btn" onclick="sendOrder()">Оформить заказ</button>
             <button class="close-btn" onclick="toggleCart()">Закрыть</button>
         </div>
     </div>
@@ -58,7 +60,7 @@
 
     <script src="app.js?v=5"></script>
     <script src="shop-enhancements.js?v=4"></script>
-    <script src="delivery.js?v=2"></script>
+    <script src="delivery.js?v=3"></script>
 
 </body>
 </html>
