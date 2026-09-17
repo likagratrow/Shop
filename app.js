@@ -7,7 +7,7 @@ const SHEET_URL =
     `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
 
 const STOCK_API_URL =
-    'https://script.google.com/macros/s/AKfycbwwQkE9C1U82T0LoYv9umYrc-pmeD0KSZP0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg/exec';
+    'https://script.google.com/macros/s/AKfycbwwQkE9C1U82T0LoYv9umYrc-pmeD0KSZPZ0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg/exec';
 
 const tg = window.Telegram?.WebApp;
 
@@ -24,7 +24,7 @@ function escapeHtml(value) {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
+        .replace(/\"/g, '&quot;')
         .replace(/'/g, '&#039;');
 }
 
@@ -43,7 +43,7 @@ function parseBalance(value) {
 function getStockText(product) {
     if (product.balance === Infinity) return 'В наличии';
     if (product.balance <= 0) return 'Нет в наличии';
-    return `В наличии: ${product.balance} шт.`;
+    return 'В наличии';
 }
 
 function parseGvizResponse(text) {
@@ -104,7 +104,9 @@ async function loadProducts() {
                 image: String(value(6, '')).trim(),
                 image2: String(value(7, '')).trim(),
                 image3: String(value(8, '')).trim(),
-                image4: String(value(9, '')).trim()
+                image4: String(value(9, '')).trim(),
+                subcategory: String(value(14, '')).trim(),
+                subcategoryKey: String(value(14, '')).trim().toLowerCase()
             };
         });
         console.log('Товары загружены:', products);
@@ -160,16 +162,12 @@ function updateCartButton() {
 }
 
 function getCardButtonHtml(product) {
+    if (product.balance <= 0) {
+        return `<button type="button" class="card-cart-btn" disabled>Нет в наличии</button>`;
+    }
+
     const quantity = getCartQuantity(product.id);
-    if (product.balance <= 0) return `<button type="button" class="card-cart-btn" disabled>Нет в наличии</button>`;
-    if (product.category !== 'items') {
-        return `<button type="button" class="card-cart-btn" onclick="event.stopPropagation(); addToCart(${JSON.stringify(product.id)});">${quantity > 0 ? 'В корзине' : 'В корзину'}</button>`;
-    }
-    if (quantity <= 0) {
-        return `<button type="button" class="card-cart-btn" onclick="event.stopPropagation(); addToCart(${JSON.stringify(product.id)});">В корзину</button>`;
-    }
-    const plusDisabled = product.balance !== Infinity && quantity >= product.balance;
-    return `<div class="card-quantity" onclick="event.stopPropagation();"><button type="button" class="card-quantity-btn" onclick="event.stopPropagation(); removeFromCart(${JSON.stringify(product.id)});" aria-label="Уменьшить количество">−</button><span class="card-quantity-value">${quantity}</span><button type="button" class="card-quantity-btn" ${plusDisabled ? 'disabled' : ''} onclick="event.stopPropagation(); addToCart(${JSON.stringify(product.id)});" aria-label="Увеличить количество">+</button></div>`;
+    return `<button type="button" class="card-cart-btn" onclick="event.stopPropagation(); addToCart(${JSON.stringify(product.id)});">${quantity > 0 ? 'В корзине' : 'В корзину'}</button>`;
 }
 
 function updateProductCard(id) {
@@ -266,10 +264,8 @@ function openProductModal(id) {
     const images = getProductImages(product);
     const imagesHtml = images.length ? `<div class="product-modal-gallery">${images.map((src, index) => `<img src="${escapeHtml(getImageUrl(src))}" alt="${escapeHtml(product.name)}" onclick="openImageLightbox(${JSON.stringify(product.id)}, ${index}); event.stopPropagation();" onerror="this.onerror=null;this.src='images/placeholder.jpg';">`).join('')}</div>` : '';
     const currentQuantity = getCartQuantity(product.id);
-    const displayedQuantity = currentQuantity > 0 ? currentQuantity : product.balance > 0 ? 1 : 0;
-    const plusDisabled = product.balance !== Infinity && displayedQuantity >= product.balance;
-    const quantityHtml = product.category === 'items' ? `<div class="product-quantity"><button type="button" onclick="changeProductQuantity(${JSON.stringify(product.id)}, -1)">−</button><span id="product-quantity-value">${displayedQuantity}</span><button type="button" ${plusDisabled || product.balance <= 0 ? 'disabled' : ''} onclick="changeProductQuantity(${JSON.stringify(product.id)}, 1)">+</button></div>` : '';
-    content.innerHTML = `${imagesHtml}<h2 class="product-modal-title">${escapeHtml(product.name)}</h2><div class="product-modal-description">${escapeHtml(product.description)}</div><div class="product-modal-price">${formatPrice(product.price)} ₽</div><div class="product-modal-stock">${escapeHtml(getStockText(product))}</div>${quantityHtml}<button type="button" class="product-add-btn" ${product.balance <= 0 ? 'disabled' : ''} onclick="addProductToCartFromModal(${JSON.stringify(product.id)})">${product.balance <= 0 ? 'Нет в наличии' : currentQuantity > 0 ? 'Добавить ещё' : 'В корзину'}</button>`;
+    const quantityHtml = '';
+    content.innerHTML = `${imagesHtml}<h2 class="product-modal-title">${escapeHtml(product.name)}</h2><div class="product-modal-description">${escapeHtml(product.description)}</div><div class="product-modal-price">${formatPrice(product.price)} ₽</div><div class="product-modal-stock">${escapeHtml(getStockText(product))}</div>${quantityHtml}<button type="button" class="product-add-btn" ${product.balance <= 0 ? 'disabled' : ''} onclick="addProductToCartFromModal(${JSON.stringify(product.id)})">${product.balance <= 0 ? 'Нет в наличии' : 'В корзину'}</button>`;
     modal.style.display = 'block';
 }
 
