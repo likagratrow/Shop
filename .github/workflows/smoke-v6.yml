@@ -1,0 +1,25 @@
+name: Shop v6 smoke
+
+on:
+  push:
+    paths:
+      - '.github/workflows/smoke-v6.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Smoke commit
+        shell: bash
+        run: |
+          echo "workflow ran" > .github/smoke-v6-result.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/smoke-v6-result.txt
+          git rm -f .github/workflows/smoke-v6.yml
+          git commit -m "Shop v6 smoke passed"
+          git push
