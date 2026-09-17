@@ -104,10 +104,9 @@ def _load_and_call(call, callback_name, order_id):
 
 def register():
     bot = _bot()
-    orders_db = _orders_db()
 
     @bot.callback_query_handler(
-        func=lambda call: call.data == "paid" and not orders_db.get(call.message.chat.id)
+        func=lambda call: call.data == "paid" and "Ваш заказ №" in str(call.message.text or "")
     )
     def paid_from_orders(call):
         order_id = _latest_order_id_from_callback_message(call)
@@ -120,7 +119,7 @@ def register():
                 pass
 
     @bot.callback_query_handler(
-        func=lambda call: call.data == "wait_manager" and not orders_db.get(call.message.chat.id)
+        func=lambda call: call.data == "wait_manager" and "Ваш заказ №" in str(call.message.text or "")
     )
     def wait_manager_from_orders(call):
         order_id = _latest_order_id_from_callback_message(call)
