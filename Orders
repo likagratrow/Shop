@@ -80,6 +80,8 @@ function createOrder(data) {
   if (!products.length) throw new Error('В заказе нет товаров.');
 
   const runtimeProducts = normalizeRuntimeProducts(products);
+  const needsDelivery = Boolean(data.needs_delivery);
+  const delivery = normalizeDelivery(data.delivery, needsDelivery);
 
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -95,8 +97,17 @@ function createOrder(data) {
     const now = new Date();
     const telegramId = String(telegramUser.id);
     const username = formatTelegramUsername(telegramUser.username);
-    const total = calculateTotal(runtimeProducts);
-    const itemsTotal = calculateItemsTotal(runtimeProducts);
+    const productTotal = calculateTotal(runtimeProducts);
+    const repeatTotal = calculateCategoryTotal(runtimeProducts, 'repeat');
+    const repeatCount = runtimeProducts.filter(function(product) {
+      return product.category === 'repeat';
+    }).length;
+    const repeatOrder = repeatCount === runtimeProducts.length;
+    const mixedOrder = repeatCount > 0 && repeatCount < runtimeProducts.length;
+    const payableGoodsTotal = Math.max(0, productTotal - repeatTotal);
+    const deliveryPrice = Number.isFinite(delivery.price) ? delivery.price : 0;
+    const total = productTotal + deliveryPrice;
+    const payableTotal = repeatOrder ? 0 : payableGoodsTotal + deliveryPrice;
     const itemsText = buildItemsText(data.items, runtimeProducts);
 
     ordersSheet.appendRow([
@@ -104,15 +115,15 @@ function createOrder(data) {
       now,
       telegramId,
       username,
-      itemsTotal,
-      '',
+      itemsText,
+      formatDeliveryForSheet(delivery),
       total,
       'новый',
       'не оплачено',
+      delivery.method_id,
+      delivery.address,
       '',
-      '',
-      '',
-      ''
+      formatDeliveryComment(delivery)
     ]);
 
     const compositionRows = products.map(function(product) {
@@ -137,8 +148,20 @@ function createOrder(data) {
         .setValues(compositionRows);
     }
 
-    storeOrderPayload(orderId, telegramId, runtimeProducts);
-    sendOrderMessage(telegramId, orderId, itemsText, runtimeProducts, total);
+    const orderTotals = {
+      productTotal: productTotal,
+      repeatTotal: repeatTotal,
+      payableGoodsTotal: payableGoodsTotal,
+      payableTotal: payableTotal,
+      total: total,
+      repeatOrder: repeatOrder,
+      mixedOrder: mixedOrder,
+      needsDelivery: needsDelivery,
+      delivery: delivery
+    };
+
+    storeOrderPayload(orderId, telegramId, runtimeProducts, orderTotals);
+    sendOrderMessage(telegramId, orderId, itemsText, runtimeProducts, orderTotals);
 
     return {
       ok: true,
@@ -156,7 +179,7 @@ function normalizeRuntimeProducts(products) {
     const normalized = Object.assign({}, product);
     const category = String(product.category || '').trim().toLowerCase();
 
-    if (category === 'care' || category === 'repair') {
+    if (category === 'care' || category === 'repair' || category === 'service') {
       normalized.category = 'repeat';
     } else {
       normalized.category = category;
@@ -166,68 +189,162 @@ function normalizeRuntimeProducts(products) {
   });
 }
 
-function sendOrderMessage(chatId, orderId, itemsText, products, total) {
-  const botToken = getBotToken();
+function normalizeDelivery(data, needsDelivery) {
+  if (!needsDelivery || !data) {
+    return {
+      method_id: '',
+      method_title: '',
+      price: 0,
+      service_id: '',
+      service_title: '',
+      country: '',
+      address: ''
+    };
+  }
 
-  const repeatTotal = calculateCategoryTotal(products, 'repeat');
-  const repeatProducts = products.filter(function(product) {
-    return String(product.category || '').trim().toLowerCase() === 'repeat';
-  });
-  const mixedOrder = repeatProducts.length > 0 && repeatProducts.length < products.length;
-  const repeatOrder = repeatProducts.length === products.length;
-  const payableTotal = mixedOrder ? Math.max(0, total - repeatTotal) : total;
+  const methodId = String(data.method_id || '').trim();
+  const methodTitle = String(data.method_title || '').trim();
+  if (!methodId || !methodTitle) {
+    throw new Error('Не выбран способ доставки.');
+  }
+
+  let price = null;
+  if (data.price !== null && data.price !== undefined && data.price !== '') {
+    const parsed = Number(data.price);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new Error('Некорректная стоимость доставки.');
+    }
+    price = parsed;
+  }
+
+  return {
+    method_id: methodId,
+    method_title: methodTitle,
+    price: price,
+    service_id: String(data.service_id || '').trim(),
+    service_title: String(data.service_title || '').trim(),
+    country: String(data.country || '').trim(),
+    address: String(data.address || '').trim()
+  };
+}
+
+function formatDeliveryForSheet(delivery) {
+  if (!delivery || !delivery.method_id) return '';
+
+  const parts = [delivery.method_title];
+  if (delivery.price !== null && delivery.price !== undefined) {
+    parts.push(formatMoney(delivery.price) + ' ₽');
+  } else {
+    parts.push('договорная');
+  }
+  if (delivery.service_title) parts.push(delivery.service_title);
+  if (delivery.country) parts.push(delivery.country);
+
+  return parts.join(' — ');
+}
+
+function formatDeliveryComment(delivery) {
+  if (!delivery || !delivery.method_id) return '';
+
+  const parts = [];
+  if (delivery.service_title) parts.push('Служба: ' + delivery.service_title);
+  if (delivery.country) parts.push('Страна: ' + delivery.country);
+  return parts.join('; ');
+}
+
+function sendOrderMessage(chatId, orderId, itemsText, products, totals) {
+  const botToken = getBotToken();
+  const delivery = totals.delivery || {};
 
   let text =
-    'Ваш заказ №' + orderId + ':\n\n' +
-    itemsText + '\n\n';
+    'Ваш заказ №' + orderId + ':
 
-  if (repeatOrder) {
+' +
+    itemsText + '
+
+';
+
+  if (delivery.method_id) {
+    text += '🚚 Доставка: ' + delivery.method_title;
+    if (delivery.price !== null && delivery.price !== undefined) {
+      text += ' — ' + formatMoney(delivery.price) + ' ₽';
+    } else {
+      text += ' — договорная';
+    }
+    text += '
+';
+    if (delivery.service_title) text += '📦 Служба доставки: ' + delivery.service_title + '
+';
+    if (delivery.country) text += '🌍 Страна: ' + delivery.country + '
+';
+    if (delivery.address) text += '📍 Адрес: ' + delivery.address + '
+';
+    text += '
+';
+  }
+
+  if (totals.repeatOrder) {
     text +=
-      '⚒️ Заказ на изготовление.\n\n' +
-      'Оставьте контакт, и мастер свяжется с вами по поводу изготовления заказа.';
+      '⚒️ Заказ на изготовление/сервис.
 
-    const replyMarkup = {
-      inline_keyboard: [[
-        {text: '📞 Оставить контакт', callback_data: 'order_contact'}
-      ]]
-    };
+' +
+      'Оставьте контакт, и мастер свяжется с вами по поводу заказа.';
 
     telegramApi(botToken, 'sendMessage', {
       chat_id: chatId,
       text: text,
-      reply_markup: JSON.stringify(replyMarkup)
+      reply_markup: JSON.stringify({
+        inline_keyboard: [[
+          {text: '📞 Оставить контакт', callback_data: 'order_contact'}
+        ]]
+      })
     });
     return;
   }
 
-  text += '💰 Товары: <b>' + formatMoney(payableTotal) + ' ₽</b>\n';
+  text += '💰 Товары к оплате: <b>' + formatMoney(totals.payableGoodsTotal) + ' ₽</b>
+';
 
-  if (mixedOrder && repeatTotal > 0) {
-    text += '⚒️ На заказ: ' + formatMoney(repeatTotal) + ' ₽\n';
+  if (totals.mixedOrder && totals.repeatTotal > 0) {
+    text += '⚒️ На заказ: ' + formatMoney(totals.repeatTotal) + ' ₽
+';
+  }
+
+  if (delivery.price === null && delivery.method_id) {
+    text += '💰 Итого: <b>' + formatMoney(totals.payableTotal) + ' ₽</b> + доставка по согласованию
+
+';
+  } else {
+    text += '💰 Итого: <b>' + formatMoney(totals.total) + ' ₽</b>
+
+';
   }
 
   text +=
-    '\n💳 Оплата переводом на Сбербанк:\n' +
-    '📱 +79089147913\n' +
-    '👤 Получатель: Лия П.\n\n' +
-    '📦 Заказ будет собран после оплаты.\n\n' +
-    'Вы можете перевести оплату сейчас или дождаться связи с менеджером в рабочее время:\n' +
-    'Пн–Пт, 10:00–18:00 (Екатеринбург).';
+    '💳 Оплата переводом на Сбербанк:
+' +
+    '📱 +79089147913
+' +
+    '👤 Получатель: Лия П.
 
-  const replyMarkup = {
-    inline_keyboard: [
-      [
-        {text: '💳 Я оплатил', callback_data: 'paid'},
-        {text: '⏳ Подожду менеджера', callback_data: 'wait_manager'}
-      ]
-    ]
-  };
+' +
+    '📦 Заказ будет собран после оплаты.
+
+' +
+    'Вы можете перевести оплату сейчас или дождаться связи с менеджером в рабочее время:
+' +
+    'Пн–Пт, 10:00–18:00 (Екатеринбург).';
 
   telegramApi(botToken, 'sendMessage', {
     chat_id: chatId,
     text: text,
     parse_mode: 'HTML',
-    reply_markup: JSON.stringify(replyMarkup)
+    reply_markup: JSON.stringify({
+      inline_keyboard: [[
+        {text: '💳 Я оплатил', callback_data: 'paid'},
+        {text: '⏳ Подожду менеджера', callback_data: 'wait_manager'}
+      ]]
+    })
   });
 }
 
@@ -248,10 +365,7 @@ function getOrderForBot(data) {
 
   const ss = SpreadsheetApp.openById(SHEET_ID);
   const ordersSheet = ss.getSheetByName(ORDERS_SHEET_NAME);
-
-  if (!ordersSheet) {
-    throw new Error('Не найден лист Заказы.');
-  }
+  if (!ordersSheet) throw new Error('Не найден лист Заказы.');
 
   const orderRow = findOrderRow(ordersSheet, orderId);
   if (!orderRow) throw new Error('Заказ не найден.');
@@ -261,23 +375,18 @@ function getOrderForBot(data) {
     throw new Error('Этот заказ принадлежит другому Telegram пользователю.');
   }
 
-  const products = loadOrderPayload(orderId);
-
-  if (!products || !products.length) {
+  const payload = loadOrderPayload(orderId);
+  if (!payload || !Array.isArray(payload.products) || !payload.products.length) {
     throw new Error('Не удалось восстановить состав заказа.');
   }
 
-  const total = Number(orderRow[6]) || 0;
-  const repeatTotal = calculateCategoryTotal(products, 'repeat');
+  const products = payload.products;
+  const delivery = payload.delivery || {};
   const repeatCount = products.filter(function(product) {
     return product.category === 'repeat';
   }).length;
   const repeatOrder = repeatCount === products.length;
   const mixedOrder = repeatCount > 0 && repeatCount < products.length;
-  const payableTotal = mixedOrder ? Math.max(0, total - repeatTotal) : (repeatOrder ? 0 : total);
-  const needsDelivery = products.some(function(product) {
-    return product.category === 'items' || product.category === 'repeat';
-  });
 
   return {
     ok: true,
@@ -287,14 +396,21 @@ function getOrderForBot(data) {
       username: String(orderRow[3] || '').trim(),
       items: buildItemsTextFromProducts(products),
       products: products,
-      product_total: total,
-      payable_total: payableTotal,
-      repeat_product_total: repeatTotal,
-      total: payableTotal,
-      needs_delivery: needsDelivery,
+      product_total: Number(payload.product_total || 0),
+      payable_goods_total: Number(payload.payable_goods_total || 0),
+      payable_total: Number(payload.payable_total || 0),
+      repeat_product_total: Number(payload.repeat_product_total || 0),
+      total: Number(payload.total || orderRow[6] || 0),
+      needs_delivery: Boolean(payload.needs_delivery),
       repeat_order: repeatOrder,
       mixed_order: mixedOrder,
       delivery: String(orderRow[5] || '').trim(),
+      delivery_id: String(delivery.method_id || '').trim(),
+      delivery_title: String(delivery.method_title || '').trim(),
+      delivery_price: delivery.price === null || delivery.price === undefined ? null : Number(delivery.price),
+      delivery_service: String(delivery.service_title || '').trim(),
+      delivery_country: String(delivery.country || '').trim(),
+      delivery_address: String(delivery.address || '').trim(),
       status: String(orderRow[7] || '').trim(),
       payment: String(orderRow[8] || '').trim(),
       receiving: String(orderRow[9] || '').trim(),
@@ -319,10 +435,17 @@ function findOrderRow(sheet, orderId) {
   return null;
 }
 
-function storeOrderPayload(orderId, telegramId, products) {
+function storeOrderPayload(orderId, telegramId, products, meta) {
   const payload = {
     created_at: Date.now(),
     telegram_id: String(telegramId),
+    product_total: Number(meta.productTotal || 0),
+    payable_goods_total: Number(meta.payableGoodsTotal || 0),
+    payable_total: Number(meta.payableTotal || 0),
+    repeat_product_total: Number(meta.repeatTotal || 0),
+    total: Number(meta.total || 0),
+    needs_delivery: Boolean(meta.needsDelivery),
+    delivery: meta.delivery || {},
     products: products.map(function(product) {
       return {
         id: String(product.id ?? '').trim(),
@@ -348,16 +471,14 @@ function loadOrderPayload(orderId) {
 
   try {
     const payload = JSON.parse(raw);
-    if (!payload || !Array.isArray(payload.products)) {
-      return null;
-    }
+    if (!payload || !Array.isArray(payload.products)) return null;
 
     if (Date.now() - Number(payload.created_at || 0) > ORDER_PAYLOAD_TTL_MS) {
       PropertiesService.getScriptProperties().deleteProperty(key);
       return null;
     }
 
-    return payload.products;
+    return payload;
   } catch (error) {
     PropertiesService.getScriptProperties().deleteProperty(key);
     return null;

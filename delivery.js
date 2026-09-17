@@ -12,7 +12,6 @@ let checkoutState = null;
 const previousRenderV3 = render;
 const previousFilterCategoryV3 = filterCategory;
 const previousLoadProductsV3 = loadProducts;
-const previousGetCardButtonHtmlV3 = getCardButtonHtml;
 
 // --------------------------------------------------
 // Остатки в карточке: никогда не показываем число.
@@ -223,12 +222,6 @@ function getCountriesV3() {
     const displayNames = new Intl.DisplayNames(['ru'], {type: 'region'});
     const specialCodes = new Set(['EU', 'UN', 'QO', 'ZZ']);
     const result = [];
-
-    for (let first = 65; first <= 90; first++) {
-        for (let second = 65; second <= 90; second++) {
-            const code = String.fromCharCode(first, second) + String.fromCharCode(second === 64 ? 65 : 65);
-        }
-    }
 
     for (let first = 65; first <= 90; first++) {
         for (let second = 65; second <= 90; second++) {
@@ -610,12 +603,6 @@ async function postOrderV3() {
         const button = document.getElementById('checkout-submit');
         if (button) button.disabled = false;
     }
-}
-
-function resetCheckoutOnCartRenderV3() {
-    if (!checkoutState) return;
-    const block = document.getElementById('cart-checkout');
-    if (block?.hidden === false) return;
 }
 
 const previousRenderCartV3 = renderCart;

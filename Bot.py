@@ -171,15 +171,15 @@ def send_owner_notification(chat_id):
     owner_text += f"\n👤 Клиент: {order.get('first_name') or ''}\n"
     if order.get("username"): owner_text += f"💬 Telegram: @{order['username']}\n"
     owner_text += f"📱 Телефон: {order['phone']}\n" if order.get("phone") else "📱 Телефон: не предоставлен\n"
-    if order.get("repeat_order"):
+    if order.get("contact_reason"):
+        owner_text += f"\n⚠️ Причина обращения: {order['contact_reason']}"
+    elif order.get("repeat_order"):
         pass
     elif order.get("mixed_order"):
         if order.get("waiting_manager"):
             owner_text += "\n⏳ Клиент ожидает диалога перед оплатой обычных товаров."
         elif order.get("paid_status"):
             owner_text += "\n💳 Клиент подтвердил оплату товаров из наличия."
-    elif order.get("contact_reason"):
-        owner_text += f"\n⚠️ Причина обращения: {order['contact_reason']}"
     elif order.get("waiting_manager"):
         owner_text += "\n⏳ Клиент ожидает диалога перед оплатой."
     else:
@@ -351,10 +351,15 @@ def paid(call):
         return
     ok, error = decrement_stock(order)
     if not ok:
-        try: bot.answer_callback_query(call.id, error or "Не удалось подтвердить наличие товара.")
+        reason = "Не удалось подтвердить наличие товара"
+        order["contact_reason"] = reason
+        try: bot.answer_callback_query(call.id, error or reason)
         except Exception: pass
-        bot.send_message(chat_id, ("⚠️ Не удалось подтвердить наличие товара." if error == "Not enough stock" else error) + "\n\n" + CONTACT_TEXT, reply_markup=contact_keyboard())
-        order["contact_reason"] = "Не удалось подтвердить наличие товара"
+        request_contact(
+            chat_id,
+            ("⚠️ Не удалось подтвердить наличие товара.\n\n" if error == "Not enough stock" else (str(error) + "\n\n")) + CONTACT_TEXT,
+            reason=reason
+        )
         return
     order["paid_status"] = True
     try: bot.answer_callback_query(call.id, "Оплата отмечена.")
