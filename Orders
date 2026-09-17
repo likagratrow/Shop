@@ -1,0 +1,340 @@
+/**
+ * Странные Вещи — Orders Google Apps Script
+ *
+ * Назначение:
+ * 1. Получить заказ из Shop Mini App.
+ * 2. Проверить Telegram initData.
+ * 3. Записать один заказ во вкладку "Заказы".
+ * 4. Записать позиции заказа во вкладку "Состав".
+ * 5. Сразу отправить покупателю сообщение от имени бота.
+ *
+ * Настройка перед развёртыванием:
+ * - этот файл целиком копируется в Google Apps Script;
+ * - в Script Properties нужно добавить BOT_TOKEN = токен Telegram-бота;
+ * - SHEET_ID уже указан ниже для текущей таблицы магазина.
+ */
+
+const SHEET_ID = '1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk';
+const ORDERS_SHEET_NAME = 'Заказы';
+const COMPOSITION_SHEET_NAME = 'Состав';
+const BOT_TOKEN_PROPERTY = 'BOT_TOKEN';
+
+const ORDERS_HEADERS = [
+  'ID заказа', 'Дата', 'Telegram ID', 'Telegram',
+  'Товары', 'Доставка', 'Итого', 'Статус',
+  'Оплата', 'Получение', 'Адрес', 'Телефон', 'Комментарий'
+];
+
+const COMPOSITION_HEADERS = [
+  'ID заказа', 'Товар', 'Категория', 'Количество', 'Цена', 'Сумма'
+];
+
+function doGet() {
+  return jsonResponse({ok: true, service: 'Orders'});
+}
+
+function doPost(e) {
+  try {
+    if (!e || !e.postData || !e.postData.contents) {
+      throw new Error('Не получены данные заказа.');
+    }
+
+    const data = JSON.parse(e.postData.contents);
+    if (String(data.action || '') !== 'create-order') {
+      throw new Error('Неизвестное действие: ' + String(data.action || ''));
+    }
+
+    return jsonResponse(createOrder(data));
+  } catch (error) {
+    console.error(error);
+    return jsonResponse({
+      ok: false,
+      error: String(error && error.message || error)
+    });
+  }
+}
+
+function createOrder(data) {
+  const initData = String(data.initData || '').trim();
+  if (!initData) throw new Error('Не передан Telegram initData.');
+
+  const telegramUser = validateTelegramInitData(initData);
+  if (!telegramUser || !telegramUser.id) {
+    throw new Error('Не удалось подтвердить Telegram пользователя.');
+  }
+
+  const products = Array.isArray(data.products) ? data.products : [];
+  if (!products.length) throw new Error('В заказе нет товаров.');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+
+  try {
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    const ordersSheet = getRequiredSheet(ss, ORDERS_SHEET_NAME, ORDERS_HEADERS);
+    const compositionSheet = getRequiredSheet(ss, COMPOSITION_SHEET_NAME, COMPOSITION_HEADERS);
+
+    const orderId = nextOrderId(ordersSheet);
+    const now = new Date();
+    const telegramId = String(telegramUser.id);
+    const username = formatTelegramUsername(telegramUser.username);
+    const total = calculateTotal(products);
+    const itemsTotal = calculateItemsTotal(products);
+    const itemsText = buildItemsText(data.items, products);
+
+    ordersSheet.appendRow([
+      orderId,
+      now,
+      telegramId,
+      username,
+      itemsTotal,
+      '',
+      total,
+      'новый',
+      'не оплачено',
+      '',
+      '',
+      '',
+      ''
+    ]);
+
+    const compositionRows = products.map(function(product) {
+      const name = String(product.name || '').trim() || String(product.title || '').trim() || 'Без названия';
+      const category = String(product.category || '').trim().toLowerCase();
+      const quantity = normalizeQuantity(product.quantity);
+      const price = normalizeMoney(product.price);
+      return [
+        orderId,
+        name,
+        category,
+        quantity,
+        price,
+        price * quantity
+      ];
+    });
+
+    if (compositionRows.length) {
+      compositionSheet
+        .getRange(compositionSheet.getLastRow() + 1, 1, compositionRows.length, COMPOSITION_HEADERS.length)
+        .setValues(compositionRows);
+    }
+
+    sendPaymentMessage(telegramId, orderId, itemsText, total);
+
+    return {
+      ok: true,
+      orderId: orderId,
+      telegramId: telegramId
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function sendPaymentMessage(chatId, orderId, itemsText, total) {
+  const botToken = PropertiesService.getScriptProperties().getProperty(BOT_TOKEN_PROPERTY);
+  if (!botToken) throw new Error('В Script Properties не задан BOT_TOKEN.');
+
+  const text =
+    'Ваш заказ №' + orderId + ':\n\n' +
+    itemsText + '\n\n' +
+    '💰 Итого: <b>' + formatMoney(total) + ' ₽</b>\n\n' +
+    'Выберите, как поступить дальше.';
+
+  const replyMarkup = {
+    inline_keyboard: [[
+      {text: '💳 Я оплатил', callback_data: 'paid:' + orderId},
+      {text: '⏳ Подожду менеджера', callback_data: 'wait_manager:' + orderId}
+    ]]
+  };
+
+  telegramApi(botToken, 'sendMessage', {
+    chat_id: chatId,
+    text: text,
+    parse_mode: 'HTML',
+    reply_markup: JSON.stringify(replyMarkup)
+  });
+}
+
+function telegramApi(botToken, method, payload) {
+  const url = 'https://api.telegram.org/bot' + botToken + '/' + method;
+  const response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+
+  const code = response.getResponseCode();
+  const body = response.getContentText();
+
+  if (code < 200 || code >= 300) {
+    throw new Error('Telegram API HTTP ' + code + ': ' + body);
+  }
+
+  let json;
+  try {
+    json = JSON.parse(body);
+  } catch (error) {
+    throw new Error('Telegram API вернул некорректный JSON.');
+  }
+
+  if (!json.ok) {
+    throw new Error('Telegram API: ' + String(json.description || 'неизвестная ошибка'));
+  }
+
+  return json.result;
+}
+
+function validateTelegramInitData(initData) {
+  const botToken = PropertiesService.getScriptProperties().getProperty(BOT_TOKEN_PROPERTY);
+  if (!botToken) throw new Error('В Script Properties не задан BOT_TOKEN.');
+
+  const params = {};
+  String(initData).split('&').forEach(function(part) {
+    if (!part) return;
+    const index = part.indexOf('=');
+    if (index < 0) return;
+    const key = decodeURIComponent(part.slice(0, index));
+    const value = decodeURIComponent(part.slice(index + 1).replace(/\+/g, ' '));
+    params[key] = value;
+  });
+
+  const receivedHash = String(params.hash || '');
+  if (!receivedHash) throw new Error('В Telegram initData отсутствует hash.');
+
+  const keys = Object.keys(params)
+    .filter(function(key) { return key !== 'hash'; })
+    .sort();
+
+  const dataCheckString = keys
+    .map(function(key) { return key + '=' + params[key]; })
+    .join('\n');
+
+  const secretKey = Utilities.computeHmacSha256Signature(
+    'WebAppData',
+    botToken
+  );
+
+  const calculatedHash = bytesToHex(
+    Utilities.computeHmacSha256Signature(dataCheckString, secretKey)
+  );
+
+  if (!constantTimeEqual(calculatedHash, receivedHash)) {
+    throw new Error('Telegram initData не прошёл проверку.');
+  }
+
+  if (!params.user) throw new Error('В Telegram initData отсутствуют данные пользователя.');
+
+  let user;
+  try {
+    user = JSON.parse(params.user);
+  } catch (error) {
+    throw new Error('Не удалось разобрать данные Telegram пользователя.');
+  }
+
+  return user;
+}
+
+function nextOrderId(sheet) {
+  const now = new Date();
+  const yy = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yy');
+  const mm = Utilities.formatDate(now, Session.getScriptTimeZone(), 'MM');
+  const prefix = yy + mm;
+
+  let maxSequence = 0;
+  if (sheet.getLastRow() >= 2) {
+    const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getDisplayValues();
+    values.forEach(function(row) {
+      const id = String(row[0] || '').trim();
+      if (id.indexOf(prefix) !== 0) return;
+      const suffix = id.slice(prefix.length);
+      if (!/^\d+$/.test(suffix)) return;
+      maxSequence = Math.max(maxSequence, Number(suffix));
+    });
+  }
+
+  const next = maxSequence + 1;
+  return prefix + String(next).padStart(2, '0');
+}
+
+function calculateTotal(products) {
+  return products.reduce(function(sum, product) {
+    return sum + normalizeMoney(product.price) * normalizeQuantity(product.quantity);
+  }, 0);
+}
+
+function calculateItemsTotal(products) {
+  return products.reduce(function(sum, product) {
+    const category = String(product.category || '').trim().toLowerCase();
+    if (category !== 'items') return sum;
+    return sum + normalizeMoney(product.price) * normalizeQuantity(product.quantity);
+  }, 0);
+}
+
+function buildItemsText(itemsText, products) {
+  const raw = String(itemsText || '').trim();
+  if (raw) return raw;
+
+  return products.map(function(product) {
+    const name = String(product.name || product.title || 'Без названия').trim();
+    const quantity = normalizeQuantity(product.quantity);
+    return name + ' (x' + quantity + ')';
+  }).join(', ');
+}
+
+function normalizeQuantity(value) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) throw new Error('Некорректное количество товара.');
+  return n;
+}
+
+function normalizeMoney(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) throw new Error('Некорректная цена товара.');
+  return n;
+}
+
+function formatMoney(value) {
+  return Number(value || 0).toLocaleString('ru-RU');
+}
+
+function formatTelegramUsername(username) {
+  const value = String(username || '').trim();
+  return value ? (value.charAt(0) === '@' ? value : '@' + value) : '';
+}
+
+function getRequiredSheet(ss, name, headers) {
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  } else if (sheet.getLastColumn() < headers.length || sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+  return sheet;
+}
+
+function bytesToHex(bytes) {
+  return bytes.map(function(byte) {
+    const value = byte < 0 ? byte + 256 : byte;
+    return ('0' + value.toString(16)).slice(-2);
+  }).join('');
+}
+
+function constantTimeEqual(a, b) {
+  a = String(a || '').toLowerCase();
+  b = String(b || '').toLowerCase();
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+function jsonResponse(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data, null, 2))
+    .setMimeType(ContentService.MimeType.JSON);
+}
