@@ -110,8 +110,6 @@ def register():
         func=lambda call: call.data == "paid" and not orders_db.get(call.message.chat.id)
     )
     def paid_from_orders(call):
-        # Новый Orders-путь: восстанавливаем заказ из Google Apps Script,
-        # затем отдаём обработку старому рабочему paid().
         order_id = _latest_order_id_from_callback_message(call)
         if order_id:
             _load_and_call(call, "paid", order_id)
@@ -125,7 +123,7 @@ def register():
         func=lambda call: call.data == "wait_manager" and not orders_db.get(call.message.chat.id)
     )
     def wait_manager_from_orders(call):
-        order_id = _latest_order_id_from_chat(call)
+        order_id = _latest_order_id_from_callback_message(call)
         if order_id:
             _load_and_call(call, "wait_manager", order_id)
         else:
@@ -136,8 +134,8 @@ def register():
 
     @bot.callback_query_handler(func=lambda call: str(call.data).startswith("order_contact"))
     def repeat_contact_from_orders(call):
-        parts = str(call.data).split(":", 1)
-        order_id = parts[1].strip() if len(parts) == 2 else ""
+        order_id = _latest_order_id_from_callback_message(call)
+
         if not order_id:
             try:
                 bot.answer_callback_query(call.id, "Не удалось определить заказ.")
@@ -171,22 +169,19 @@ def register():
 
 
 def _latest_order_id_from_callback_message(call):
-    # Формат сообщения Orders в текущей версии: "Ваш заказ №260917:"
-    # Берём номер из текста самого сообщения, чтобы не гадать по таблице.
     text = str(call.message.text or "")
     marker = "Ваш заказ №"
+
     if marker not in text:
         return ""
+
     tail = text.split(marker, 1)[1]
     digits = ""
+
     for char in tail:
         if char.isdigit():
             digits += char
         else:
             break
+
     return digits
-
-
-def _latest_order_id_from_chat(call):
-    # Для кнопки wait_manager делаем тот же разбор номера заказа из сообщения.
-    return _latest_order_id_from_callback_message(call)
