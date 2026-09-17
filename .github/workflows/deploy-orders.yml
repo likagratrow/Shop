@@ -1,0 +1,58 @@
+name: Deploy Orders Apps Script
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Orders'
+      - '.github/workflows/deploy-orders.yml'
+
+jobs:
+  deploy-orders:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Prepare Apps Script project
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p apps-script
+          cp Orders apps-script/Orders.gs
+          printf '%s' '${{ secrets.ORDERS_CLASP_JSON }}' > apps-script/.clasp.json
+          cat > apps-script/appsscript.json <<'EOF'
+          {
+            "timeZone": "Asia/Yekaterinburg",
+            "dependencies": {},
+            "exceptionLogging": "STACKDRIVER",
+            "runtimeVersion": "V8"
+          }
+          EOF
+
+      - name: Setup clasp credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
+
+      - name: Push source to Apps Script
+        working-directory: apps-script
+        run: npx @google/clasp@latest push --force
+
+      - name: Update existing deployment
+        working-directory: apps-script
+        env:
+          ORDERS_DEPLOYMENT_ID: ${{ secrets.ORDERS_DEPLOYMENT_ID }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          npx @google/clasp@latest create-deployment \
+            --deploymentId "$ORDERS_DEPLOYMENT_ID" \
+            --description "GitHub ${COMMIT_SHA:0:7}"
