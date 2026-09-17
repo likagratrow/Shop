@@ -256,39 +256,24 @@ function sendOrderMessage(chatId, orderId, itemsText, products, totals) {
   const botToken = getBotToken();
   const delivery = totals.delivery || {};
 
-  let text =
-    'Ваш заказ №' + orderId + ':
-
-' +
-    itemsText + '
-
-';
+  let text = `Ваш заказ №${orderId}:\n\n${itemsText}\n\n`;
 
   if (delivery.method_id) {
-    text += '🚚 Доставка: ' + delivery.method_title;
+    text += `🚚 Доставка: ${delivery.method_title}`;
     if (delivery.price !== null && delivery.price !== undefined) {
-      text += ' — ' + formatMoney(delivery.price) + ' ₽';
+      text += ` — ${formatMoney(delivery.price)} ₽`;
     } else {
       text += ' — договорная';
     }
-    text += '
-';
-    if (delivery.service_title) text += '📦 Служба доставки: ' + delivery.service_title + '
-';
-    if (delivery.country) text += '🌍 Страна: ' + delivery.country + '
-';
-    if (delivery.address) text += '📍 Адрес: ' + delivery.address + '
-';
-    text += '
-';
+    text += '\n';
+    if (delivery.service_title) text += `📦 Служба доставки: ${delivery.service_title}\n`;
+    if (delivery.country) text += `🌍 Страна: ${delivery.country}\n`;
+    if (delivery.address) text += `📍 Адрес: ${delivery.address}\n`;
+    text += '\n';
   }
 
   if (totals.repeatOrder) {
-    text +=
-      '⚒️ Заказ на изготовление/сервис.
-
-' +
-      'Оставьте контакт, и мастер свяжется с вами по поводу заказа.';
+    text += '⚒️ Заказ на изготовление/сервис.\n\nОставьте контакт, и мастер свяжется с вами по поводу заказа.';
 
     telegramApi(botToken, 'sendMessage', {
       chat_id: chatId,
@@ -302,37 +287,24 @@ function sendOrderMessage(chatId, orderId, itemsText, products, totals) {
     return;
   }
 
-  text += '💰 Товары к оплате: <b>' + formatMoney(totals.payableGoodsTotal) + ' ₽</b>
-';
+  text += `💰 Товары к оплате: <b>${formatMoney(totals.payableGoodsTotal)} ₽</b>\n`;
 
   if (totals.mixedOrder && totals.repeatTotal > 0) {
-    text += '⚒️ На заказ: ' + formatMoney(totals.repeatTotal) + ' ₽
-';
+    text += `⚒️ На заказ: ${formatMoney(totals.repeatTotal)} ₽\n`;
   }
 
   if (delivery.price === null && delivery.method_id) {
-    text += '💰 Итого: <b>' + formatMoney(totals.payableTotal) + ' ₽</b> + доставка по согласованию
-
-';
+    text += `💰 Итого: <b>${formatMoney(totals.payableTotal)} ₽</b> + доставка по согласованию\n\n`;
   } else {
-    text += '💰 Итого: <b>' + formatMoney(totals.total) + ' ₽</b>
-
-';
+    text += `💰 Итого: <b>${formatMoney(totals.total)} ₽</b>\n\n`;
   }
 
   text +=
-    '💳 Оплата переводом на Сбербанк:
-' +
-    '📱 +79089147913
-' +
-    '👤 Получатель: Лия П.
-
-' +
-    '📦 Заказ будет собран после оплаты.
-
-' +
-    'Вы можете перевести оплату сейчас или дождаться связи с менеджером в рабочее время:
-' +
+    '💳 Оплата переводом на Сбербанк:\n' +
+    '📱 +79089147913\n' +
+    '👤 Получатель: Лия П.\n\n' +
+    '📦 Заказ будет собран после оплаты.\n\n' +
+    'Вы можете перевести оплату сейчас или дождаться связи с менеджером в рабочее время:\n' +
     'Пн–Пт, 10:00–18:00 (Екатеринбург).';
 
   telegramApi(botToken, 'sendMessage', {
