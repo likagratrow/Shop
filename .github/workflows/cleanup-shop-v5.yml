@@ -1,0 +1,32 @@
+name: Cleanup Shop v5
+
+on:
+  push:
+    paths:
+      - '.github/workflows/cleanup-shop-v5.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: "!contains(github.event.head_commit.message, 'Apply Shop v5 cleanup')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply patch and validate
+        shell: bash
+        run: |
+          python3 .github/cleanup_shop_v5.py
+
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Bot.py Orders app.js
+          git rm -f .github/workflows/cleanup-shop-v5.yml .github/cleanup_shop_v5.py
+          git commit -m "Apply Shop v5 cleanup"
+          git push
