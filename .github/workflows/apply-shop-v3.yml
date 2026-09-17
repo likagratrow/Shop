@@ -1,0 +1,509 @@
+name: Apply Shop v3 cleanup
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-shop-v3.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    if: "!contains(github.event.head_commit.message, 'Apply Shop v3 refactor')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch backend and cleanup legacy flow
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              if old not in text:
+                  raise SystemExit(f'Expected text not found in {path}: {old[:120]!r}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          def replace_regex(path, pattern, replacement):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              new_text, count = re.subn(pattern, replacement, text, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f'Expected exactly one regex match in {path}, got {count}: {pattern[:120]!r}')
+              p.write_text(new_text, encoding='utf-8')
+
+          # ------------------------------------------------------------
+          # Orders: delivery is part of the order, not a bot-side flow.
+          # service is the new catalog category, but keeps repeat behavior.
+          # ------------------------------------------------------------
+          orders = 'Orders'
+
+          new_create_order = r'''function createOrder(data) {
+            const initData = String(data.initData || '').trim();
+            if (!initData) throw new Error('Не передан Telegram initData.');
+
+            const telegramUser = validateTelegramInitData(initData);
+            if (!telegramUser || !telegramUser.id) {
+              throw new Error('Не удалось подтвердить Telegram пользователя.');
+            }
+
+            const products = Array.isArray(data.products) ? data.products : [];
+            if (!products.length) throw new Error('В заказе нет товаров.');
+
+            const runtimeProducts = normalizeRuntimeProducts(products);
+            const needsDelivery = Boolean(data.needs_delivery);
+            const delivery = normalizeDelivery(data.delivery, needsDelivery);
+
+            const lock = LockService.getScriptLock();
+            lock.waitLock(30000);
+
+            try {
+              cleanupExpiredOrderPayloads();
+
+              const ss = SpreadsheetApp.openById(SHEET_ID);
+              const ordersSheet = getRequiredSheet(ss, ORDERS_SHEET_NAME, ORDERS_HEADERS);
+              const compositionSheet = getRequiredSheet(ss, COMPOSITION_SHEET_NAME, COMPOSITION_HEADERS);
+
+              const orderId = nextOrderId(ordersSheet);
+              const now = new Date();
+              const telegramId = String(telegramUser.id);
+              const username = formatTelegramUsername(telegramUser.username);
+              const productTotal = calculateTotal(runtimeProducts);
+              const repeatTotal = calculateCategoryTotal(runtimeProducts, 'repeat');
+              const repeatCount = runtimeProducts.filter(function(product) {
+                return product.category === 'repeat';
+              }).length;
+              const repeatOrder = repeatCount === runtimeProducts.length;
+              const mixedOrder = repeatCount > 0 && repeatCount < runtimeProducts.length;
+              const payableGoodsTotal = Math.max(0, productTotal - repeatTotal);
+              const deliveryPrice = Number.isFinite(delivery.price) ? delivery.price : 0;
+              const total = productTotal + deliveryPrice;
+              const payableTotal = repeatOrder ? 0 : payableGoodsTotal + deliveryPrice;
+              const itemsText = buildItemsText(data.items, runtimeProducts);
+
+              ordersSheet.appendRow([
+                orderId,
+                now,
+                telegramId,
+                username,
+                itemsText,
+                formatDeliveryForSheet(delivery),
+                total,
+                'новый',
+                'не оплачено',
+                delivery.method_id,
+                delivery.address,
+                '',
+                formatDeliveryComment(delivery)
+              ]);
+
+              const compositionRows = products.map(function(product) {
+                const name = String(product.name || '').trim() || String(product.title || '').trim() || 'Без названия';
+                const category = String(product.category || '').trim().toLowerCase();
+                const quantity = normalizeQuantity(product.quantity);
+                const price = normalizeMoney(product.price);
+
+                return [
+                  orderId,
+                  name,
+                  category,
+                  quantity,
+                  price,
+                  price * quantity
+                ];
+              });
+
+              if (compositionRows.length) {
+                compositionSheet
+                  .getRange(compositionSheet.getLastRow() + 1, 1, compositionRows.length, COMPOSITION_HEADERS.length)
+                  .setValues(compositionRows);
+              }
+
+              const orderTotals = {
+                productTotal: productTotal,
+                repeatTotal: repeatTotal,
+                payableGoodsTotal: payableGoodsTotal,
+                payableTotal: payableTotal,
+                total: total,
+                repeatOrder: repeatOrder,
+                mixedOrder: mixedOrder,
+                needsDelivery: needsDelivery,
+                delivery: delivery
+              };
+
+              storeOrderPayload(orderId, telegramId, runtimeProducts, orderTotals);
+              sendOrderMessage(telegramId, orderId, itemsText, runtimeProducts, orderTotals);
+
+              return {
+                ok: true,
+                orderId: orderId,
+                telegramId: telegramId
+              };
+
+            } finally {
+              lock.releaseLock();
+            }
+          }
+          '''
+          replace_regex(orders, r'function createOrder\(data\) \{.*?\n\}\n\nfunction normalizeRuntimeProducts', new_create_order + '\nfunction normalizeRuntimeProducts')
+
+          new_runtime_and_message = r'''function normalizeRuntimeProducts(products) {
+            return products.map(function(product) {
+              const normalized = Object.assign({}, product);
+              const category = String(product.category || '').trim().toLowerCase();
+
+              if (category === 'care' || category === 'repair' || category === 'service') {
+                normalized.category = 'repeat';
+              } else {
+                normalized.category = category;
+              }
+
+              return normalized;
+            });
+          }
+
+          function normalizeDelivery(data, needsDelivery) {
+            if (!needsDelivery || !data) {
+              return {
+                method_id: '',
+                method_title: '',
+                price: 0,
+                service_id: '',
+                service_title: '',
+                country: '',
+                address: ''
+              };
+            }
+
+            const methodId = String(data.method_id || '').trim();
+            const methodTitle = String(data.method_title || '').trim();
+            if (!methodId || !methodTitle) {
+              throw new Error('Не выбран способ доставки.');
+            }
+
+            let price = null;
+            if (data.price !== null && data.price !== undefined && data.price !== '') {
+              const parsed = Number(data.price);
+              if (!Number.isFinite(parsed) || parsed < 0) {
+                throw new Error('Некорректная стоимость доставки.');
+              }
+              price = parsed;
+            }
+
+            return {
+              method_id: methodId,
+              method_title: methodTitle,
+              price: price,
+              service_id: String(data.service_id || '').trim(),
+              service_title: String(data.service_title || '').trim(),
+              country: String(data.country || '').trim(),
+              address: String(data.address || '').trim()
+            };
+          }
+
+          function formatDeliveryForSheet(delivery) {
+            if (!delivery || !delivery.method_id) return '';
+
+            const parts = [delivery.method_title];
+            if (delivery.price !== null && delivery.price !== undefined) {
+              parts.push(formatMoney(delivery.price) + ' ₽');
+            } else {
+              parts.push('договорная');
+            }
+            if (delivery.service_title) parts.push(delivery.service_title);
+            if (delivery.country) parts.push(delivery.country);
+
+            return parts.join(' — ');
+          }
+
+          function formatDeliveryComment(delivery) {
+            if (!delivery || !delivery.method_id) return '';
+
+            const parts = [];
+            if (delivery.service_title) parts.push('Служба: ' + delivery.service_title);
+            if (delivery.country) parts.push('Страна: ' + delivery.country);
+            return parts.join('; ');
+          }
+
+          function sendOrderMessage(chatId, orderId, itemsText, products, totals) {
+            const botToken = getBotToken();
+            const delivery = totals.delivery || {};
+
+            let text =
+              'Ваш заказ №' + orderId + ':\n\n' +
+              itemsText + '\n\n';
+
+            if (delivery.method_id) {
+              text += '🚚 Доставка: ' + delivery.method_title;
+              if (delivery.price !== null && delivery.price !== undefined) {
+                text += ' — ' + formatMoney(delivery.price) + ' ₽';
+              } else {
+                text += ' — договорная';
+              }
+              text += '\n';
+              if (delivery.service_title) text += '📦 Служба доставки: ' + delivery.service_title + '\n';
+              if (delivery.country) text += '🌍 Страна: ' + delivery.country + '\n';
+              if (delivery.address) text += '📍 Адрес: ' + delivery.address + '\n';
+              text += '\n';
+            }
+
+            if (totals.repeatOrder) {
+              text +=
+                '⚒️ Заказ на изготовление/сервис.\n\n' +
+                'Оставьте контакт, и мастер свяжется с вами по поводу заказа.';
+
+              telegramApi(botToken, 'sendMessage', {
+                chat_id: chatId,
+                text: text,
+                reply_markup: JSON.stringify({
+                  inline_keyboard: [[
+                    {text: '📞 Оставить контакт', callback_data: 'order_contact'}
+                  ]]
+                })
+              });
+              return;
+            }
+
+            text += '💰 Товары к оплате: <b>' + formatMoney(totals.payableGoodsTotal) + ' ₽</b>\n';
+
+            if (totals.mixedOrder && totals.repeatTotal > 0) {
+              text += '⚒️ На заказ: ' + formatMoney(totals.repeatTotal) + ' ₽\n';
+            }
+
+            if (delivery.price === null && delivery.method_id) {
+              text += '💰 Итого: <b>' + formatMoney(totals.payableTotal) + ' ₽</b> + доставка по согласованию\n\n';
+            } else {
+              text += '💰 Итого: <b>' + formatMoney(totals.total) + ' ₽</b>\n\n';
+            }
+
+            text +=
+              '💳 Оплата переводом на Сбербанк:\n' +
+              '📱 +79089147913\n' +
+              '👤 Получатель: Лия П.\n\n' +
+              '📦 Заказ будет собран после оплаты.\n\n' +
+              'Вы можете перевести оплату сейчас или дождаться связи с менеджером в рабочее время:\n' +
+              'Пн–Пт, 10:00–18:00 (Екатеринбург).';
+
+            telegramApi(botToken, 'sendMessage', {
+              chat_id: chatId,
+              text: text,
+              parse_mode: 'HTML',
+              reply_markup: JSON.stringify({
+                inline_keyboard: [[
+                  {text: '💳 Я оплатил', callback_data: 'paid'},
+                  {text: '⏳ Подожду менеджера', callback_data: 'wait_manager'}
+                ]]
+              })
+            });
+          }
+          '''
+          replace_regex(orders, r'function normalizeRuntimeProducts\(products\) \{.*?\n\}\n\nfunction getOrderForBot', new_runtime_and_message + '\nfunction getOrderForBot')
+
+          new_get_order = r'''function getOrderForBot(data) {
+            const botToken = getBotToken();
+            const apiToken = String(data.api_token || '');
+            if (!apiToken || !constantTimeEqual(apiToken, botToken)) {
+              throw new Error('Недействительный API-токен.');
+            }
+
+            const orderId = String(data.order_id || '').trim();
+            const telegramId = String(data.telegram_id || '').trim();
+
+            if (!orderId) throw new Error('Не указан ID заказа.');
+            if (!telegramId) throw new Error('Не указан Telegram ID.');
+
+            cleanupExpiredOrderPayloads();
+
+            const ss = SpreadsheetApp.openById(SHEET_ID);
+            const ordersSheet = ss.getSheetByName(ORDERS_SHEET_NAME);
+            if (!ordersSheet) throw new Error('Не найден лист Заказы.');
+
+            const orderRow = findOrderRow(ordersSheet, orderId);
+            if (!orderRow) throw new Error('Заказ не найден.');
+
+            const storedTelegramId = String(orderRow[2] || '').trim();
+            if (storedTelegramId !== telegramId) {
+              throw new Error('Этот заказ принадлежит другому Telegram пользователю.');
+            }
+
+            const payload = loadOrderPayload(orderId);
+            if (!payload || !Array.isArray(payload.products) || !payload.products.length) {
+              throw new Error('Не удалось восстановить состав заказа.');
+            }
+
+            const products = payload.products;
+            const delivery = payload.delivery || {};
+            const repeatCount = products.filter(function(product) {
+              return product.category === 'repeat';
+            }).length;
+            const repeatOrder = repeatCount === products.length;
+            const mixedOrder = repeatCount > 0 && repeatCount < products.length;
+
+            return {
+              ok: true,
+              order: {
+                order_id: orderId,
+                telegram_id: storedTelegramId,
+                username: String(orderRow[3] || '').trim(),
+                items: buildItemsTextFromProducts(products),
+                products: products,
+                product_total: Number(payload.product_total || 0),
+                payable_goods_total: Number(payload.payable_goods_total || 0),
+                payable_total: Number(payload.payable_total || 0),
+                repeat_product_total: Number(payload.repeat_product_total || 0),
+                total: Number(payload.total || orderRow[6] || 0),
+                needs_delivery: Boolean(payload.needs_delivery),
+                repeat_order: repeatOrder,
+                mixed_order: mixedOrder,
+                delivery: String(orderRow[5] || '').trim(),
+                delivery_id: String(delivery.method_id || '').trim(),
+                delivery_title: String(delivery.method_title || '').trim(),
+                delivery_price: delivery.price === null || delivery.price === undefined ? null : Number(delivery.price),
+                delivery_service: String(delivery.service_title || '').trim(),
+                delivery_country: String(delivery.country || '').trim(),
+                delivery_address: String(delivery.address || '').trim(),
+                status: String(orderRow[7] || '').trim(),
+                payment: String(orderRow[8] || '').trim(),
+                receiving: String(orderRow[9] || '').trim(),
+                address: String(orderRow[10] || '').trim(),
+                phone: String(orderRow[11] || '').trim(),
+                comment: String(orderRow[12] || '').trim()
+              }
+            };
+          }
+          '''
+          replace_regex(orders, r'function getOrderForBot\(data\) \{.*?\n\}\n\nfunction findOrderRow', new_get_order + '\nfunction findOrderRow')
+
+          new_store_payload = r'''function storeOrderPayload(orderId, telegramId, products, meta) {
+            const payload = {
+              created_at: Date.now(),
+              telegram_id: String(telegramId),
+              product_total: Number(meta.productTotal || 0),
+              payable_goods_total: Number(meta.payableGoodsTotal || 0),
+              payable_total: Number(meta.payableTotal || 0),
+              repeat_product_total: Number(meta.repeatTotal || 0),
+              total: Number(meta.total || 0),
+              needs_delivery: Boolean(meta.needsDelivery),
+              delivery: meta.delivery || {},
+              products: products.map(function(product) {
+                return {
+                  id: String(product.id ?? '').trim(),
+                  name: String(product.name || '').trim() || String(product.title || '').trim() || 'Без названия',
+                  category: String(product.category || '').trim().toLowerCase(),
+                  quantity: normalizeQuantity(product.quantity),
+                  price: normalizeMoney(product.price)
+                };
+              })
+            };
+
+            PropertiesService.getScriptProperties().setProperty(
+              ORDER_PAYLOAD_PREFIX + orderId,
+              JSON.stringify(payload)
+            );
+          }
+
+          function loadOrderPayload(orderId) {
+            const key = ORDER_PAYLOAD_PREFIX + orderId;
+            const raw = PropertiesService.getScriptProperties().getProperty(key);
+
+            if (!raw) return null;
+
+            try {
+              const payload = JSON.parse(raw);
+              if (!payload || !Array.isArray(payload.products)) return null;
+
+              if (Date.now() - Number(payload.created_at || 0) > ORDER_PAYLOAD_TTL_MS) {
+                PropertiesService.getScriptProperties().deleteProperty(key);
+                return null;
+              }
+
+              return payload;
+            } catch (error) {
+              PropertiesService.getScriptProperties().deleteProperty(key);
+              return null;
+            }
+          }
+          '''
+          replace_regex(orders, r'function storeOrderPayload\(orderId, telegramId, products\) \{.*?\n\}\n\nfunction cleanupExpiredOrderPayloads', new_store_payload + '\nfunction cleanupExpiredOrderPayloads')
+
+          # ------------------------------------------------------------
+          # orders_bridge.py: carry structured delivery into Bot.py.
+          # ------------------------------------------------------------
+          bridge = 'orders_bridge.py'
+          bridge_old = '''        "needs_delivery": bool(source.get("needs_delivery", False)),\n        "repeat_order": bool(source.get("repeat_order", False)),\n        "mixed_order": bool(source.get("mixed_order", False)),\n        "username": username,\n'''
+          bridge_new = '''        "needs_delivery": bool(source.get("needs_delivery", False)),\n        "repeat_order": bool(source.get("repeat_order", False)),\n        "mixed_order": bool(source.get("mixed_order", False)),\n        "delivery_id": str(source.get("delivery_id") or source.get("receiving") or "").strip(),\n        "delivery_title": str(source.get("delivery_title") or "").strip(),\n        "delivery_price": source.get("delivery_price"),\n        "delivery_service": str(source.get("delivery_service") or "").strip(),\n        "delivery_country": str(source.get("delivery_country") or "").strip(),\n        "delivery_address": str(source.get("delivery_address") or source.get("address") or "").strip(),\n        "username": username,\n'''
+          replace_once(bridge, bridge_old, bridge_new)
+
+          # ------------------------------------------------------------
+          # commands.py: remove obsolete care/repair web_app_data bridge.
+          # ------------------------------------------------------------
+          commands = 'commands.py'
+          replace_once(commands, 'import json\n', '')
+          replace_regex(commands, r'\n\ndef _is_care_or_repair_order.*?\n\n@_bot\(\)\.message_handler\(commands=\["shop"\]\)', '\n\n@_bot().message_handler(commands=["shop"])')
+
+          # ------------------------------------------------------------
+          # Bot.py: remove the old bot-side delivery/web_app_data flow.
+          # ------------------------------------------------------------
+          bot = 'Bot.py'
+          bot_text = Path(bot).read_text(encoding='utf-8')
+          bot_text = bot_text.replace('import re\n', '', 1)
+          bot_text = re.sub(r'DELIVERY_SHEET_URL = .*?\n', '', bot_text, count=1)
+
+          bot_text = re.sub(r'\n\ndef load_delivery_options\(\):.*?\n\ndef format_price', '\n\ndef format_price', bot_text, count=1, flags=re.S)
+          bot_text = re.sub(r'\n\ndef format_order_items\(items_text, products\):.*?\n\ndef remove_inline_buttons', '\n\ndef remove_inline_buttons', bot_text, count=1, flags=re.S)
+          bot_text = re.sub(r'\n\ndef get_delivery_address_prompt\(delivery_id\):.*?\n\ndef send_payment_message', '\n\ndef send_payment_message', bot_text, count=1, flags=re.S)
+          bot_text = re.sub(r'\n\ndef start_delivery\(chat_id, reason=None\):.*?\n\n@bot\.message_handler\(commands=\["start"\]\)', '\n\n@bot.message_handler(commands=["start"])', bot_text, count=1, flags=re.S)
+          bot_text = re.sub(r'\n\n@bot\.message_handler\(content_types=\["web_app_data"\]\).*?\n\n@bot\.callback_query_handler\(func=lambda call: call\.data == "paid"\)', '\n\n@bot.callback_query_handler(func=lambda call: call.data == "paid")', bot_text, count=1, flags=re.S)
+          bot_text = re.sub(r'\n\ndef text_handler\(message\):.*?\n\nprint\("Бот запущен"\)', r'''\n\ndef text_handler(message):\n    chat_id = message.chat.id\n    order = orders_db.get(chat_id)\n    if order and order.get("waiting_individual_description"):\n        order["individual_description"] = message.text\n        order["waiting_individual_description"] = False\n        request_contact(chat_id)\n        return\n    if order and order.get("waiting_feedback"):\n        order["feedback_text"] = message.text\n        order["waiting_feedback"] = False\n        bot.send_message(\n            YOUR_TELEGRAM_ID,\n            f"💬 НОВАЯ ОБРАТНАЯ СВЯЗЬ\\n\\n{message.text}\\n\\n👤 Клиент: {message.from_user.first_name or ''}\\n💬 Telegram: @{message.from_user.username}"\n            if message.from_user.username\n            else f"💬 НОВАЯ ОБРАТНАЯ СВЯЗЬ\\n\\n{message.text}\\n\\n👤 Клиент: {message.from_user.first_name or ''}"\n        )\n        bot.send_message(chat_id, "Спасибо! Ваше сообщение передано.", reply_markup=shop_keyboard())\n        return\n\n\nprint("Бот запущен")''', bot_text, count=1, flags=re.S)
+
+          # Stock failure -> contact flow -> owner notification is guaranteed.
+          old_paid_error = '''    if not ok:\n        try: bot.answer_callback_query(call.id, error or "Не удалось подтвердить наличие товара.")\n        except Exception: pass\n        bot.send_message(chat_id, ("⚠️ Не удалось подтвердить наличие товара." if error == "Not enough stock" else error) + "\\n\\n" + CONTACT_TEXT, reply_markup=contact_keyboard())\n        order["contact_reason"] = "Не удалось подтвердить наличие товара"\n        return\n'''
+          new_paid_error = '''    if not ok:\n        reason = "Не удалось подтвердить наличие товара"\n        order["contact_reason"] = reason\n        try: bot.answer_callback_query(call.id, error or reason)\n        except Exception: pass\n        request_contact(\n            chat_id,\n            ("⚠️ Не удалось подтвердить наличие товара.\\n\\n" if error == "Not enough stock" else (str(error) + "\\n\\n")) + CONTACT_TEXT,\n            reason=reason\n        )\n        return\n'''
+          replace_once(bot, old_paid_error, new_paid_error)
+
+          # Delivery is already stored in the order, so contact completion no longer starts a second flow.
+          bot_text = Path(bot).read_text(encoding='utf-8')
+          bot_text = re.sub(r'\n\ndef handle_contact\(message\):.*?\n\n@bot\.message_handler\(func=lambda message: message\.text == "💬 Не отправлять номер, связаться в ТГ"\)', r'''\n\ndef handle_contact(message):\n    chat_id = message.chat.id\n    order = orders_db.get(chat_id)\n    if not order or not order.get("waiting_contact"):\n        return\n\n    order["phone"] = message.contact.phone_number\n    order["waiting_contact"] = False\n\n    if order.get("contact_reason"):\n        send_owner_notification(chat_id)\n        bot.send_message(chat_id, "Спасибо! Я передал информацию менеджеру, мы свяжемся с вами для уточнения деталей.", reply_markup=shop_keyboard())\n        return\n\n    if order.get("repeat_order"):\n        finish_repeat_order(chat_id)\n        return\n\n    if order.get("mixed_order"):\n        send_owner_notification(chat_id)\n        if order.get("paid_status"):\n            send_final_order_message(chat_id)\n        elif order.get("waiting_manager"):\n            bot.send_message(chat_id, "Хорошо 😊\\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())\n        return\n\n    if order.get("paid_status"):\n        send_owner_notification(chat_id)\n        send_final_order_message(chat_id)\n    elif order.get("waiting_manager"):\n        send_owner_notification(chat_id)\n        bot.send_message(chat_id, "Хорошо 😊\\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())\n\n\n@bot.message_handler(func=lambda message: message.text == "💬 Не отправлять номер, связаться в ТГ")''', bot_text, count=1, flags=re.S)
+
+          bot_text = Path(bot).read_text(encoding='utf-8')
+          bot_text = re.sub(r'\n\ndef no_phone\(message\):.*?\n\n@bot\.message_handler\(func=lambda message: True\)', r'''\n\ndef no_phone(message):\n    chat_id = message.chat.id\n    order = orders_db.get(chat_id)\n    if not order or not order.get("waiting_contact"):\n        return\n\n    order["phone"] = None\n    order["waiting_contact"] = False\n\n    if order.get("contact_reason"):\n        send_owner_notification(chat_id)\n        bot.send_message(chat_id, "Спасибо! Я передал информацию менеджеру, мы свяжемся с вами для уточнения деталей.", reply_markup=shop_keyboard())\n        return\n\n    if order.get("repeat_order"):\n        finish_repeat_order(chat_id)\n        return\n\n    if order.get("mixed_order"):\n        send_owner_notification(chat_id)\n        if order.get("paid_status"):\n            send_final_order_message(chat_id)\n        elif order.get("waiting_manager"):\n            bot.send_message(chat_id, "Хорошо 😊\\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())\n        return\n\n    if order.get("paid_status"):\n        send_owner_notification(chat_id)\n        send_final_order_message(chat_id)\n    elif order.get("waiting_manager"):\n        send_owner_notification(chat_id)\n        bot.send_message(chat_id, "Хорошо 😊\\nМенеджер свяжется с вами в рабочее время Пн-Пт 10-18.", reply_markup=shop_keyboard())\n\n\n@bot.message_handler(func=lambda message: True)''', bot_text, count=1, flags=re.S)
+
+          # Contact reason must win over the generic mixed-order state in owner notification.
+          bot_text = Path(bot).read_text(encoding='utf-8')
+          old_status = '''    if order.get("repeat_order"):\n        pass\n    elif order.get("mixed_order"):\n        if order.get("waiting_manager"):\n            owner_text += "\\n⏳ Клиент ожидает диалога перед оплатой обычных товаров."\n        elif order.get("paid_status"):\n            owner_text += "\\n💳 Клиент подтвердил оплату товаров из наличия."\n    elif order.get("contact_reason"):\n        owner_text += f"\\n⚠️ Причина обращения: {order['contact_reason']}"\n'''
+          new_status = '''    if order.get("contact_reason"):\n        owner_text += f"\\n⚠️ Причина обращения: {order['contact_reason']}"\n    elif order.get("repeat_order"):\n        pass\n    elif order.get("mixed_order"):\n        if order.get("waiting_manager"):\n            owner_text += "\\n⏳ Клиент ожидает диалога перед оплатой обычных товаров."\n        elif order.get("paid_status"):\n            owner_text += "\\n💳 Клиент подтвердил оплату товаров из наличия."\n'''
+          replace_once(bot, old_status, new_status)
+
+          bot_text = Path(bot).read_text(encoding='utf-8')
+          Path(bot).write_text(bot_text, encoding='utf-8')
+
+          # Small cleanup in the new frontend.
+          delivery = Path('delivery.js')
+          dtext = delivery.read_text(encoding='utf-8')
+          dtext = dtext.replace("    for (let first = 65; first <= 90; first++) {\n        for (let second = 65; second <= 90; second++) {\n            const code = String.fromCharCode(first, second) + String.fromCharCode(second === 64 ? 65 : 65);\n        }\n    }\n\n", "", 1)
+          dtext = dtext.replace("const previousGetCardButtonHtmlV3 = getCardButtonHtml;\n", "", 1)
+          dtext = dtext.replace("function resetCheckoutOnCartRenderV3() {\n    if (!checkoutState) return;\n    const block = document.getElementById('cart-checkout');\n    if (block?.hidden === false) return;\n}\n\n", "", 1)
+          delivery.write_text(dtext, encoding='utf-8')
+
+          # Validate Python files before touching git.
+          import py_compile
+          py_compile.compile('Bot.py', doraise=True)
+          py_compile.compile('commands.py', doraise=True)
+          py_compile.compile('orders_bridge.py', doraise=True)
+          print('Python syntax OK')
+          PY
+
+      - name: Commit refactor
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Orders orders_bridge.py commands.py Bot.py delivery.js
+          git rm -f .github/workflows/apply-shop-v3.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "Apply Shop v3 refactor"
+          git push
