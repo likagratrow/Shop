@@ -1,19 +1,26 @@
 // ==================================================
-// ДОСТАВКА В ЗАКАЗЕ
+// ОТПРАВКА ЗАКАЗА В ORDERS
 // ==================================================
-// Этот файл только добавляет в payload заказа признак,
-// нужна ли доставка, и данные каждого товара.
 
-sendOrder = function() {
+const ORDERS_API_URL =
+    'https://script.google.com/macros/s/AKfycbz2XQn7s0e_irZ2rRsvcXb_I7hKp_DxNXTYsZlIt2TATE58IiqJ9AyjUKj9f09-CII9/exec';
+
+
+sendOrder = async function() {
 
     if (!cart.length) return;
+
+    if (!tg?.initData) {
+        alert('Заказ можно оформить только внутри Telegram.');
+        return;
+    }
 
     const total =
         cart.reduce(
             (sum, item) =>
                 sum +
-                item.price *
-                item.count,
+                Number(item.price || 0) *
+                Number(item.count || 0),
             0
         );
 
@@ -31,25 +38,51 @@ sendOrder = function() {
             return category === 'items' || category === 'repeat';
         });
 
-    const payload =
-        JSON.stringify({
-            items: itemsText,
-            products: cart.map(item => ({
-                id: item.id,
-                quantity: item.count,
-                category: item.category,
-                price: item.price
-            })),
-            total: total,
-            needs_delivery: needsDelivery
-        });
+    const payload = {
+        action: 'create-order',
+        initData: tg.initData,
+        items: itemsText,
+        products: cart.map(item => ({
+            id: item.id,
+            name: item.name,
+            quantity: item.count,
+            category: item.category,
+            price: Number(item.price || 0)
+        })),
+        total: total,
+        needs_delivery: needsDelivery
+    };
 
-    if (tg?.sendData) {
-        tg.sendData(payload);
+    try {
+        const response = await fetch(
+            ORDERS_API_URL,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'text/plain;charset=utf-8'
+                },
+                body: JSON.stringify(payload),
+                cache: 'no-store'
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error(`Orders вернул HTTP ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (!result?.ok) {
+            throw new Error(result?.error || 'Не удалось создать заказ.');
+        }
+
         tg.close();
-    } else {
+
+    } catch (error) {
+        console.error('Ошибка отправки заказа:', error);
         alert(
-            'Заказ можно оформить только внутри Telegram.'
+            'Не удалось оформить заказ.\n\n' +
+            (error?.message || 'Попробуйте ещё раз.')
         );
     }
 };
