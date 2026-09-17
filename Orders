@@ -24,7 +24,6 @@ const COMPOSITION_SHEET_NAME = 'Состав';
 const BOT_TOKEN_PROPERTY = 'BOT_TOKEN';
 const ORDER_PAYLOAD_PREFIX = 'ORDER_PAYLOAD_';
 const ORDER_PAYLOAD_TTL_MS = 24 * 60 * 60 * 1000;
-const LEGACY_PRODUCT_ID_HEADER = 'ID товара (тех.)';
 
 const ORDERS_HEADERS = [
   'ID заказа', 'Дата', 'Telegram ID', 'Telegram',
@@ -38,8 +37,6 @@ const COMPOSITION_HEADERS = [
 
 
 function doGet(e) {
-  migrateLegacyTechnicalIds();
-
   return jsonResponse({ok: true, service: 'Orders'});
 }
 
@@ -94,8 +91,6 @@ function createOrder(data) {
     const ss = SpreadsheetApp.openById(SHEET_ID);
     const ordersSheet = getRequiredSheet(ss, ORDERS_SHEET_NAME, ORDERS_HEADERS);
     const compositionSheet = getRequiredSheet(ss, COMPOSITION_SHEET_NAME, COMPOSITION_HEADERS);
-
-    migrateLegacyTechnicalIds();
 
     const orderId = nextOrderId(ordersSheet);
     const now = new Date();
@@ -238,14 +233,12 @@ function getOrderForBot(data) {
   if (!telegramId) throw new Error('Не указан Telegram ID.');
 
   cleanupExpiredOrderPayloads();
-  migrateLegacyTechnicalIds();
 
   const ss = SpreadsheetApp.openById(SHEET_ID);
   const ordersSheet = ss.getSheetByName(ORDERS_SHEET_NAME);
-  const compositionSheet = ss.getSheetByName(COMPOSITION_SHEET_NAME);
 
-  if (!ordersSheet || !compositionSheet) {
-    throw new Error('Не найдены листы Заказы или Состав.');
+  if (!ordersSheet) {
+    throw new Error('Не найден лист Заказы.');
   }
 
   const orderRow = findOrderRow(ordersSheet, orderId);
@@ -256,14 +249,10 @@ function getOrderForBot(data) {
     throw new Error('Этот заказ принадлежит другому Telegram пользователю.');
   }
 
-  let products = loadOrderPayload(orderId);
+  const products = loadOrderPayload(orderId);
 
-  if (!products) {
-    products = loadProductsWithoutTechnicalIds(compositionSheet, orderId);
-  }
-
-  if (!products.length) {
-    throw new Error('В составе заказа нет позиций.');
+  if (!products || !products.length) {
+    throw new Error('Не удалось восстановить состав заказа.');
   }
 
   const total = Number(orderRow[6]) || 0;
@@ -317,27 +306,6 @@ function findOrderRow(sheet, orderId) {
   }
 
   return null;
-}
-
-
-function loadProductsWithoutTechnicalIds(sheet, orderId) {
-  if (sheet.getLastRow() < 2) return [];
-
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
-
-  return rows
-    .filter(function(row) {
-      return String(row[0] || '').trim() === orderId;
-    })
-    .map(function(row) {
-      return {
-        id: '',
-        name: String(row[1] || '').trim(),
-        category: String(row[2] || '').trim().toLowerCase(),
-        quantity: Number(row[3]) || 0,
-        price: Number(row[4]) || 0
-      };
-    });
 }
 
 
@@ -406,51 +374,6 @@ function cleanupExpiredOrderPayloads() {
       PropertiesService.getScriptProperties().deleteProperty(key);
     }
   });
-}
-
-
-function migrateLegacyTechnicalIds() {
-  const ss = SpreadsheetApp.openById(SHEET_ID);
-  const sheet = ss.getSheetByName(COMPOSITION_SHEET_NAME);
-
-  if (!sheet || sheet.getLastColumn() < 7 || sheet.getLastRow() < 2) return;
-
-  const header = String(sheet.getRange(1, 7).getValue() || '').trim();
-  if (header !== LEGACY_PRODUCT_ID_HEADER) return;
-
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getValues();
-  const grouped = {};
-  const now = Date.now();
-
-  rows.forEach(function(row) {
-    const orderId = String(row[0] || '').trim();
-    if (!orderId) return;
-
-    if (!grouped[orderId]) {
-      grouped[orderId] = [];
-    }
-
-    grouped[orderId].push({
-      id: String(row[6] || '').trim(),
-      name: String(row[1] || '').trim(),
-      category: String(row[2] || '').trim().toLowerCase(),
-      quantity: Number(row[3]) || 0,
-      price: Number(row[4]) || 0
-    });
-  });
-
-  const properties = PropertiesService.getScriptProperties();
-  Object.keys(grouped).forEach(function(orderId) {
-    const key = ORDER_PAYLOAD_PREFIX + orderId;
-    if (properties.getProperty(key)) return;
-
-    properties.setProperty(key, JSON.stringify({
-      created_at: now,
-      products: grouped[orderId]
-    }));
-  });
-
-  sheet.deleteColumns(7, sheet.getLastColumn() - 6);
 }
 
 
