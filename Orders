@@ -1,17 +1,17 @@
 /**
  * Странные Вещи — Orders Google Apps Script
  *
- * Назначение:
- * 1. Получить заказ из Shop Mini App.
- * 2. Проверить Telegram initData.
- * 3. Записать один заказ во вкладку "Заказы".
- * 4. Записать позиции заказа во вкладку "Состав".
- * 5. Сразу отправить покупателю сообщение от имени бота.
+ * Shop Mini App -> Orders -> Telegram bot.
  *
- * Настройка перед развёртыванием:
- * - этот файл целиком копируется в Google Apps Script;
- * - в Script Properties нужно добавить BOT_TOKEN = токен Telegram-бота;
- * - SHEET_ID уже указан ниже для текущей таблицы магазина.
+ * Orders:
+ * 1. Проверяет Telegram initData.
+ * 2. Пишет заказ в "Заказы".
+ * 3. Пишет позиции в "Состав".
+ * 4. Сразу отправляет пользователю сообщение в обычный Telegram-чат.
+ * 5. По запросу бота возвращает сохранённый заказ по ID.
+ *
+ * Script Properties:
+ *   BOT_TOKEN = токен Telegram-бота
  */
 
 const SHEET_ID = '1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk';
@@ -25,26 +25,43 @@ const ORDERS_HEADERS = [
   'Оплата', 'Получение', 'Адрес', 'Телефон', 'Комментарий'
 ];
 
+// Последний столбец технический: нужен боту для списания остатков.
+// Его можно скрыть — это не часть пользовательской аналитики.
 const COMPOSITION_HEADERS = [
-  'ID заказа', 'Товар', 'Категория', 'Количество', 'Цена', 'Сумма'
+  'ID заказа', 'Товар', 'Категория', 'Количество', 'Цена', 'Сумма', 'ID товара (тех.)'
 ];
 
-function doGet() {
+
+function doGet(e) {
+  const action = String(e?.parameter?.action || '');
+
+  if (action === 'ping') {
+    return jsonResponse({ok: true, service: 'Orders'});
+  }
+
   return jsonResponse({ok: true, service: 'Orders'});
 }
+
 
 function doPost(e) {
   try {
     if (!e || !e.postData || !e.postData.contents) {
-      throw new Error('Не получены данные заказа.');
+      throw new Error('Не получены данные запроса.');
     }
 
     const data = JSON.parse(e.postData.contents);
-    if (String(data.action || '') !== 'create-order') {
-      throw new Error('Неизвестное действие: ' + String(data.action || ''));
+    const action = String(data.action || '');
+
+    if (action === 'create-order') {
+      return jsonResponse(createOrder(data));
     }
 
-    return jsonResponse(createOrder(data));
+    if (action === 'get-order') {
+      return jsonResponse(getOrderForBot(data));
+    }
+
+    throw new Error('Неизвестное действие: ' + action);
+
   } catch (error) {
     console.error(error);
     return jsonResponse({
@@ -53,6 +70,7 @@ function doPost(e) {
     });
   }
 }
+
 
 function createOrder(data) {
   const initData = String(data.initData || '').trim();
@@ -73,6 +91,8 @@ function createOrder(data) {
     const ss = SpreadsheetApp.openById(SHEET_ID);
     const ordersSheet = getRequiredSheet(ss, ORDERS_SHEET_NAME, ORDERS_HEADERS);
     const compositionSheet = getRequiredSheet(ss, COMPOSITION_SHEET_NAME, COMPOSITION_HEADERS);
+
+    ensureCompositionTechnicalColumn(compositionSheet);
 
     const orderId = nextOrderId(ordersSheet);
     const now = new Date();
@@ -103,13 +123,16 @@ function createOrder(data) {
       const category = String(product.category || '').trim().toLowerCase();
       const quantity = normalizeQuantity(product.quantity);
       const price = normalizeMoney(product.price);
+      const productId = String(product.id ?? '').trim();
+
       return [
         orderId,
         name,
         category,
         quantity,
         price,
-        price * quantity
+        price * quantity,
+        productId
       ];
     });
 
@@ -119,33 +142,75 @@ function createOrder(data) {
         .setValues(compositionRows);
     }
 
-    sendPaymentMessage(telegramId, orderId, itemsText, total);
+    sendOrderMessage(telegramId, orderId, itemsText, products, total);
 
     return {
       ok: true,
       orderId: orderId,
       telegramId: telegramId
     };
+
   } finally {
     lock.releaseLock();
   }
 }
 
-function sendPaymentMessage(chatId, orderId, itemsText, total) {
-  const botToken = PropertiesService.getScriptProperties().getProperty(BOT_TOKEN_PROPERTY);
-  if (!botToken) throw new Error('В Script Properties не задан BOT_TOKEN.');
 
-  const text =
+function sendOrderMessage(chatId, orderId, itemsText, products, total) {
+  const botToken = getBotToken();
+
+  const repeatTotal = calculateCategoryTotal(products, 'repeat');
+  const repeatProducts = products.filter(function(product) {
+    return String(product.category || '').trim().toLowerCase() === 'repeat';
+  });
+  const mixedOrder = repeatProducts.length > 0 && repeatProducts.length < products.length;
+  const repeatOrder = repeatProducts.length === products.length;
+  const payableTotal = mixedOrder ? Math.max(0, total - repeatTotal) : total;
+
+  let text =
     'Ваш заказ №' + orderId + ':\n\n' +
-    itemsText + '\n\n' +
-    '💰 Итого: <b>' + formatMoney(total) + ' ₽</b>\n\n' +
-    'Выберите, как поступить дальше.';
+    itemsText + '\n\n';
+
+  if (repeatOrder) {
+    text +=
+      '⚒️ Заказ на изготовление.\n\n' +
+      'Оставьте контакт, и мастер свяжется с вами по поводу изготовления заказа.';
+
+    const replyMarkup = {
+      inline_keyboard: [[
+        {text: '📞 Оставить контакт', callback_data: 'order_contact'}
+      ]]
+    };
+
+    telegramApi(botToken, 'sendMessage', {
+      chat_id: chatId,
+      text: text,
+      reply_markup: JSON.stringify(replyMarkup)
+    });
+    return;
+  }
+
+  text += '💰 Товары: <b>' + formatMoney(payableTotal) + ' ₽</b>\n';
+
+  if (mixedOrder && repeatTotal > 0) {
+    text += '⚒️ На заказ: ' + formatMoney(repeatTotal) + ' ₽\n';
+  }
+
+  text +=
+    '\n💳 Оплата переводом на Сбербанк:\n' +
+    '📱 +79089147913\n' +
+    '👤 Получатель: Лия П.\n\n' +
+    '📦 Заказ будет собран после оплаты.\n\n' +
+    'Вы можете перевести оплату сейчас или дождаться связи с менеджером в рабочее время:\n' +
+    'Пн–Пт, 10:00–18:00 (Екатеринбург).';
 
   const replyMarkup = {
-    inline_keyboard: [[
-      {text: '💳 Я оплатил', callback_data: 'paid:' + orderId},
-      {text: '⏳ Подожду менеджера', callback_data: 'wait_manager:' + orderId}
-    ]]
+    inline_keyboard: [
+      [
+        {text: '💳 Я оплатил', callback_data: 'paid'},
+        {text: '⏳ Подожду менеджера', callback_data: 'wait_manager'}
+      ]
+    ]
   };
 
   telegramApi(botToken, 'sendMessage', {
@@ -156,8 +221,116 @@ function sendPaymentMessage(chatId, orderId, itemsText, total) {
   });
 }
 
+
+function getOrderForBot(data) {
+  const botToken = getBotToken();
+  const apiToken = String(data.api_token || '');
+  if (!apiToken || !constantTimeEqual(apiToken, botToken)) {
+    throw new Error('Недействительный API-токен.');
+  }
+
+  const orderId = String(data.order_id || '').trim();
+  const telegramId = String(data.telegram_id || '').trim();
+
+  if (!orderId) throw new Error('Не указан ID заказа.');
+  if (!telegramId) throw new Error('Не указан Telegram ID.');
+
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const ordersSheet = ss.getSheetByName(ORDERS_SHEET_NAME);
+  const compositionSheet = ss.getSheetByName(COMPOSITION_SHEET_NAME);
+
+  if (!ordersSheet || !compositionSheet) {
+    throw new Error('Не найдены листы Заказы или Состав.');
+  }
+
+  const orderRow = findOrderRow(ordersSheet, orderId);
+  if (!orderRow) throw new Error('Заказ не найден.');
+
+  const storedTelegramId = String(orderRow[2] || '').trim();
+  if (storedTelegramId !== telegramId) {
+    throw new Error('Этот заказ принадлежит другому Telegram пользователю.');
+  }
+
+  const lastColumn = Math.max(6, compositionSheet.getLastColumn());
+  const rows = compositionSheet.getLastRow() < 2
+    ? []
+    : compositionSheet.getRange(2, 1, compositionSheet.getLastRow() - 1, lastColumn).getValues();
+
+  const products = rows
+    .filter(function(row) {
+      return String(row[0] || '').trim() === orderId;
+    })
+    .map(function(row) {
+      return {
+        id: String(row[6] || '').trim(),
+        name: String(row[1] || '').trim(),
+        category: String(row[2] || '').trim().toLowerCase(),
+        quantity: Number(row[3]) || 0,
+        price: Number(row[4]) || 0
+      };
+    });
+
+  if (!products.length) {
+    throw new Error('В составе заказа нет позиций.');
+  }
+
+  const total = Number(orderRow[6]) || 0;
+  const repeatTotal = calculateCategoryTotal(products, 'repeat');
+  const repeatCount = products.filter(function(product) {
+    return product.category === 'repeat';
+  }).length;
+  const repeatOrder = repeatCount === products.length;
+  const mixedOrder = repeatCount > 0 && repeatCount < products.length;
+  const payableTotal = mixedOrder ? Math.max(0, total - repeatTotal) : (repeatOrder ? 0 : total);
+  const needsDelivery = products.some(function(product) {
+    return product.category === 'items' || product.category === 'repeat';
+  });
+
+  return {
+    ok: true,
+    order: {
+      order_id: orderId,
+      telegram_id: storedTelegramId,
+      username: String(orderRow[3] || '').trim(),
+      items: buildItemsTextFromProducts(products),
+      products: products,
+      product_total: total,
+      payable_total: payableTotal,
+      repeat_product_total: repeatTotal,
+      total: payableTotal,
+      needs_delivery: needsDelivery,
+      repeat_order: repeatOrder,
+      mixed_order: mixedOrder,
+      delivery: String(orderRow[5] || '').trim(),
+      status: String(orderRow[7] || '').trim(),
+      payment: String(orderRow[8] || '').trim(),
+      receiving: String(orderRow[9] || '').trim(),
+      address: String(orderRow[10] || '').trim(),
+      phone: String(orderRow[11] || '').trim(),
+      comment: String(orderRow[12] || '').trim()
+    }
+  };
+}
+
+
+function findOrderRow(sheet, orderId) {
+  if (sheet.getLastRow() < 2) return null;
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 13).getValues();
+
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim() === orderId) {
+      return rows[i];
+    }
+  }
+
+  return null;
+}
+
+
 function telegramApi(botToken, method, payload) {
   const url = 'https://api.telegram.org/bot' + botToken + '/' + method;
+
   const response = UrlFetchApp.fetch(url, {
     method: 'post',
     contentType: 'application/json',
@@ -186,17 +359,21 @@ function telegramApi(botToken, method, payload) {
   return json.result;
 }
 
+
 function validateTelegramInitData(initData) {
-  const botToken = PropertiesService.getScriptProperties().getProperty(BOT_TOKEN_PROPERTY);
-  if (!botToken) throw new Error('В Script Properties не задан BOT_TOKEN.');
+  const botToken = getBotToken();
 
   const params = {};
+
   String(initData).split('&').forEach(function(part) {
     if (!part) return;
+
     const index = part.indexOf('=');
     if (index < 0) return;
+
     const key = decodeURIComponent(part.slice(0, index));
     const value = decodeURIComponent(part.slice(index + 1).replace(/\+/g, ' '));
+
     params[key] = value;
   });
 
@@ -212,8 +389,8 @@ function validateTelegramInitData(initData) {
     .join('\n');
 
   const secretKey = Utilities.computeHmacSha256Signature(
-    'WebAppData',
-    botToken
+    botToken,
+    'WebAppData'
   );
 
   const calculatedHash = bytesToHex(
@@ -221,42 +398,59 @@ function validateTelegramInitData(initData) {
   );
 
   if (!constantTimeEqual(calculatedHash, receivedHash)) {
-    throw new Error('Telegram initData не прошёл проверку.');
+    throw new Error('Telegram initData не прошло проверку.');
   }
 
-  if (!params.user) throw new Error('В Telegram initData отсутствуют данные пользователя.');
+  const authDate = Number(params.auth_date);
+  if (!Number.isFinite(authDate)) {
+    throw new Error('В Telegram initData отсутствует auth_date.');
+  }
 
-  let user;
+  const maxAge = 24 * 60 * 60;
+  const age = Math.floor(Date.now() / 1000) - authDate;
+
+  if (age > maxAge) {
+    throw new Error('Telegram initData устарело.');
+  }
+
+  if (!params.user) {
+    throw new Error('В Telegram initData отсутствуют данные пользователя.');
+  }
+
   try {
-    user = JSON.parse(params.user);
+    return JSON.parse(params.user);
   } catch (error) {
     throw new Error('Не удалось разобрать данные Telegram пользователя.');
   }
-
-  return user;
 }
+
 
 function nextOrderId(sheet) {
   const now = new Date();
-  const yy = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yy');
-  const mm = Utilities.formatDate(now, Session.getScriptTimeZone(), 'MM');
+  const timezone = Session.getScriptTimeZone();
+  const yy = Utilities.formatDate(now, timezone, 'yy');
+  const mm = Utilities.formatDate(now, timezone, 'MM');
   const prefix = yy + mm;
 
   let maxSequence = 0;
+
   if (sheet.getLastRow() >= 2) {
     const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getDisplayValues();
+
     values.forEach(function(row) {
       const id = String(row[0] || '').trim();
       if (id.indexOf(prefix) !== 0) return;
+
       const suffix = id.slice(prefix.length);
       if (!/^\d+$/.test(suffix)) return;
+
       maxSequence = Math.max(maxSequence, Number(suffix));
     });
   }
 
-  const next = maxSequence + 1;
-  return prefix + String(next).padStart(2, '0');
+  return prefix + String(maxSequence + 1).padStart(2, '0');
 }
+
 
 function calculateTotal(products) {
   return products.reduce(function(sum, product) {
@@ -264,56 +458,117 @@ function calculateTotal(products) {
   }, 0);
 }
 
+
 function calculateItemsTotal(products) {
+  return calculateCategoryTotal(products, 'items');
+}
+
+
+function calculateCategoryTotal(products, targetCategory) {
   return products.reduce(function(sum, product) {
     const category = String(product.category || '').trim().toLowerCase();
-    if (category !== 'items') return sum;
+    if (category !== targetCategory) return sum;
+
     return sum + normalizeMoney(product.price) * normalizeQuantity(product.quantity);
   }, 0);
 }
 
+
 function buildItemsText(itemsText, products) {
   const raw = String(itemsText || '').trim();
   if (raw) return raw;
+  return buildItemsTextFromProducts(products);
+}
 
+
+function buildItemsTextFromProducts(products) {
   return products.map(function(product) {
     const name = String(product.name || product.title || 'Без названия').trim();
+    const category = String(product.category || '').trim().toLowerCase();
     const quantity = normalizeQuantity(product.quantity);
-    return name + ' (x' + quantity + ')';
-  }).join(', ');
+
+    return category === 'items'
+      ? name + ' (x' + quantity + ')'
+      : name;
+  }).join('\n');
 }
+
 
 function normalizeQuantity(value) {
   const n = Number(value);
-  if (!Number.isInteger(n) || n < 1) throw new Error('Некорректное количество товара.');
+  if (!Number.isInteger(n) || n < 1) {
+    throw new Error('Некорректное количество товара.');
+  }
   return n;
 }
 
+
 function normalizeMoney(value) {
   const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) throw new Error('Некорректная цена товара.');
+  if (!Number.isFinite(n) || n < 0) {
+    throw new Error('Некорректная цена товара.');
+  }
   return n;
 }
+
 
 function formatMoney(value) {
   return Number(value || 0).toLocaleString('ru-RU');
 }
+
 
 function formatTelegramUsername(username) {
   const value = String(username || '').trim();
   return value ? (value.charAt(0) === '@' ? value : '@' + value) : '';
 }
 
+
+function getBotToken() {
+  const token = PropertiesService.getScriptProperties().getProperty(BOT_TOKEN_PROPERTY);
+  if (!token) throw new Error('В Script Properties не задан BOT_TOKEN.');
+  return token;
+}
+
+
 function getRequiredSheet(ss, name, headers) {
   let sheet = ss.getSheetByName(name);
+
   if (!sheet) {
     sheet = ss.insertSheet(name);
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  } else if (sheet.getLastColumn() < headers.length || sheet.getLastRow() === 0) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  } else {
+    if (sheet.getLastColumn() < headers.length) {
+      sheet.insertColumnsAfter(sheet.getLastColumn(), headers.length - sheet.getLastColumn());
+    }
+
+    for (let i = 0; i < headers.length; i++) {
+      const cell = sheet.getRange(1, i + 1);
+      if (!String(cell.getValue() || '').trim()) {
+        cell.setValue(headers[i]);
+      }
+    }
   }
+
   return sheet;
 }
+
+
+function ensureCompositionTechnicalColumn(sheet) {
+  if (sheet.getLastColumn() < 7) {
+    sheet.insertColumnsAfter(sheet.getLastColumn(), 7 - sheet.getLastColumn());
+  }
+
+  if (!String(sheet.getRange(1, 7).getValue() || '').trim()) {
+    sheet.getRange(1, 7).setValue('ID товара (тех.)');
+  }
+
+  try {
+    sheet.hideColumns(7);
+  } catch (error) {
+    console.log('Не удалось скрыть техническую колонку:', error);
+  }
+}
+
 
 function bytesToHex(bytes) {
   return bytes.map(function(byte) {
@@ -322,16 +577,22 @@ function bytesToHex(bytes) {
   }).join('');
 }
 
+
 function constantTimeEqual(a, b) {
   a = String(a || '').toLowerCase();
   b = String(b || '').toLowerCase();
+
   if (a.length !== b.length) return false;
+
   let result = 0;
+
   for (let i = 0; i < a.length; i++) {
     result |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
+
   return result === 0;
 }
+
 
 function jsonResponse(data) {
   return ContentService
