@@ -106,3 +106,9 @@ def order_command(message):
 @_bot().message_handler(commands=["feedback"])
 def feedback_command(message):
     reviews.start(_bot(), message.chat.id, _orders_db())
+
+
+# Orders — отдельный Apps Script-сервис магазина.
+# Регистрируем его до основных callback-хендлеров Bot.py.
+import orders_bridge
+orders_bridge.register()
