@@ -61,11 +61,14 @@ def _load_order(chat_id, order_id):
         "items": source.get("items", ""),
         "products": source.get("products", []),
         "product_total": source.get("product_total", 0),
+        "payable_goods_total": source.get("payable_goods_total", 0),
         "payable_total": source.get("payable_total", 0),
-        "repeat_product_total": source.get("repeat_product_total", 0),
+        "managed_product_total": source.get("managed_product_total", 0),
         "total": source.get("total", 0),
         "needs_delivery": bool(source.get("needs_delivery", False)),
+        "managed_order": bool(source.get("managed_order", False)),
         "repeat_order": bool(source.get("repeat_order", False)),
+        "service_order": bool(source.get("service_order", False)),
         "mixed_order": bool(source.get("mixed_order", False)),
         "delivery_id": str(source.get("delivery_id") or source.get("receiving") or "").strip(),
         "delivery_title": str(source.get("delivery_title") or "").strip(),
@@ -138,7 +141,7 @@ def register():
                 pass
 
     @bot.callback_query_handler(func=lambda call: str(call.data).startswith("order_contact"))
-    def repeat_contact_from_orders(call):
+    def managed_contact_from_orders(call):
         order_id = _latest_order_id_from_callback_message(call)
 
         if not order_id:
@@ -166,11 +169,9 @@ def register():
             pass
 
         request_contact = getattr(_main(), "request_contact", None)
+        managed_contact_text = getattr(_main(), "MANAGED_CONTACT_TEXT", "Оставьте контакт, и менеджер свяжется с вами.")
         if request_contact:
-            request_contact(
-                call.message.chat.id,
-                _main().REPEAT_CONTACT_TEXT,
-            )
+            request_contact(call.message.chat.id, managed_contact_text)
 
 
 def _latest_order_id_from_callback_message(call):
