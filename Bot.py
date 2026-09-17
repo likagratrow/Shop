@@ -10,8 +10,9 @@ YOUR_TELEGRAM_ID = 5219493908
 WEB_APP_URL = "https://likagratrow.github.io/Shop/"
 STOCK_API_URL = "https://script.google.com/macros/s/AKfycbwwQkE9C1U82T0LoYv9umYrc-pmeD0KSZPZ0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg/exec"
 CONTACT_TEXT = "Спасибо! Для завершения оформления заказа отправьте номер телефона или, если удобнее, свяжемся через Telegram"
-REPEAT_CONTACT_TEXT = "Пожалуйста оставьте контакт (telegram или если удобнее, телефон), и мы свяжемся с вами по поводу изготовления заказа. Спасибо!"
-MIXED_CONTACT_TEXT = "Пожалуйста оставьте контакт (telegram или если удобнее, телефон), и мы свяжемся с вами по поводу изготовления заказа. Остальные товары будут доставлены как обычно. Спасибо!"
+MANAGED_CONTACT_TEXT = "Пожалуйста оставьте контакт (telegram или если удобнее, телефон), и мы свяжемся с вами по поводу изготовления или сервисной работы. Спасибо!"
+MIXED_CONTACT_TEXT = "Пожалуйста оставьте контакт (telegram или если удобнее, телефон), и мы свяжемся с вами по поводу изготовления или сервисной работы. Остальные товары будут обработаны как обычно. Спасибо!"
+MANAGED_CATEGORIES = {"repeat", "service"}
 
 bot = telebot.TeleBot(BOT_TOKEN)
 orders_db = {}
@@ -68,8 +69,8 @@ def send_final_order_message(chat_id):
     if not order:
         return
 
-    if order.get("repeat_order"):
-        text = "Спасибо!\n\nМастер свяжется с вами в рабочее время Пн–Пт 10-18."
+    if order.get("managed_order") and not order.get("mixed_order"):
+        text = "Спасибо!\n\nМастер или менеджер свяжется с вами в рабочее время Пн–Пт 10-18 для согласования деталей."
     elif order.get("delivery_id") == "courier_ekb":
         text = "Спасибо!\n\nВсё-всё записал и передал менеджеру) Сборка заказа обычно занимает один рабочий день, затем мы с вами свяжемся и обрадуем, что готовы организовать доставку. Спасибо за заказ!"
     else:
@@ -95,18 +96,18 @@ def send_owner_notification(chat_id):
     delivery_country = order.get("delivery_country")
     delivery_address = order.get("delivery_address")
     payable_total = order.get("payable_total", order.get("total", 0))
-    repeat_product_total = order.get("repeat_product_total", 0)
+    managed_product_total = order.get("managed_product_total", 0)
     total = order.get("total", payable_total)
 
     owner_text = "🛍 НОВЫЙ ЗАКАЗ\n\n"
 
-    if order.get("repeat_order") or order.get("mixed_order"):
-        owner_text += "⚒️ НА ЗАКАЗ\n\n"
+    if order.get("managed_order") or order.get("mixed_order"):
+        owner_text += "⚒️ НА ЗАКАЗ / СЕРВИС\n\n"
 
     owner_text += f"{items}\n\n💰 К оплате сейчас: {format_price(payable_total)}\n"
 
-    if repeat_product_total:
-        owner_text += f"⚒️ На заказ: {format_price(repeat_product_total)}\n"
+    if managed_product_total:
+        owner_text += f"⚒️ На заказ / сервис: {format_price(managed_product_total)}\n"
 
     if delivery_title:
         if delivery_price is None:
@@ -139,7 +140,7 @@ def send_owner_notification(chat_id):
     bot.send_message(YOUR_TELEGRAM_ID, owner_text, parse_mode="HTML")
 
 
-def finish_repeat_order(chat_id):
+def finish_managed_order(chat_id):
     order = orders_db.get(chat_id)
     if not order or order.get("completed"):
         return
@@ -159,7 +160,7 @@ def decrement_stock(order):
             return False, "Некорректные данные товара."
 
         category = str(product.get("category", "")).strip().lower()
-        if category == "repeat":
+        if category in MANAGED_CATEGORIES:
             continue
 
         product_id = str(product.get("id", "")).strip()
@@ -322,8 +323,8 @@ def handle_contact(message):
         )
         return
 
-    if order.get("repeat_order"):
-        finish_repeat_order(chat_id)
+    if order.get("managed_order"):
+        finish_managed_order(chat_id)
         return
 
     if order.get("mixed_order"):
@@ -370,8 +371,8 @@ def no_phone(message):
         )
         return
 
-    if order.get("repeat_order"):
-        finish_repeat_order(chat_id)
+    if order.get("managed_order"):
+        finish_managed_order(chat_id)
         return
 
     if order.get("mixed_order"):
