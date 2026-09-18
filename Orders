@@ -38,7 +38,7 @@ function doPost(e) {
     const action = String(data.action || '');
 
     if (action === 'create-order') return jsonResponse(createOrder(data));
-    if (action === 'attach-order-phone') return jsonResponse(attachOrderPhone(data));
+    if (action === 'receive-contact') return jsonResponse(receiveContact(data));
     if (action === 'get-order') return jsonResponse(getOrderForBot(data));
 
     throw new Error('Неизвестное действие: ' + action);
@@ -193,12 +193,10 @@ function createOrder(data) {
     console.error('Не удалось отправить финал клиенту:', error);
   }
 
-  if (orderMeta.contactMethod === 'telegram') {
-    try {
-      sendOwnerNotificationForOrder(orderId, telegramId);
-    } catch (error) {
-      console.error('Не удалось отправить уведомление владельцу:', error);
-    }
+  try {
+    sendOwnerNotificationForOrder(orderId, telegramId);
+  } catch (error) {
+    console.error('Не удалось отправить уведомление владельцу:', error);
   }
 
   if (orderMeta.postOrderAction === 'paid' && !orderMeta.managedOrder) {
@@ -218,7 +216,7 @@ function createOrder(data) {
 function processStock(products) {
   const items = products
     .filter(function(product) {
-      return MANAGED_CATEGORIES.indexOf(String(product.category || '').trim().toLowerCase()) === -1;
+      return String(product.category || '').trim().toLowerCase() === 'items';
     })
     .map(function(product) {
       return {
@@ -295,14 +293,39 @@ function sendCustomerFinalMessage(chatId, orderId, itemsText, meta) {
   if (meta.contactMethod === 'phone') text += '📱 Связь: телефон\n';
 
   if (meta.managedOrder) {
-    text += '\nСпасибо! Всё записал и передал мастеру или менеджеру. Мы свяжемся с вами в рабочее время Пн–Пт, 10:00–18:00 (Екатеринбург).';
+    text += '\nСпасибо! Всё записал и передал мастеру. Мы свяжемся с вами в рабочее время Пн–Пт, 10:00–18:00 (Екатеринбург).';
   } else if (delivery.method_id === 'courier_ekb') {
-    text += '\nСпасибо! Всё записал и передал менеджеру) Сборка заказа обычно занимает один рабочий день, затем мы с вами свяжемся и обрадуем, что готовы организовать доставку. Спасибо за заказ!';
+    text += '\nСпасибо! Всё записал и передал мастеру) Сборка заказа обычно занимает один рабочий день, затем мы с вами свяжемся и обрадуем, что готовы организовать доставку. Спасибо за заказ!';
   } else {
-    text += '\nСпасибо! Всё записал и передал менеджеру) Сборка заказа обычно занимает один рабочий день, затем мы с вами свяжемся и обрадуем, что можно забрать (или что он отправлен). Спасибо за заказ!';
+    text += '\nСпасибо! Всё записал и передал мастеру) Сборка заказа обычно занимает один рабочий день, затем мы с вами свяжемся и обрадуем, что можно забрать (или что он отправлен). Спасибо за заказ!';
   }
 
   telegramApi(botToken, 'sendMessage', {chat_id: chatId, text: text, parse_mode: 'HTML'});
+  sendHubMenu(chatId);
+}
+
+function sendHubMenu(chatId) {
+  const keyboard = {
+    inline_keyboard: [
+      [
+        {text: '🛍 Магазин', web_app: {url: 'https://likagratrow.github.io/Shop/'}},
+        {text: '📅 Записаться', web_app: {url: 'https://likagratrow.github.io/Booking/'}}
+      ],
+      [
+        {text: '🧵 Особый заказ', callback_data: 'menu_individual'},
+        {text: '💬 Обратная связь', callback_data: 'menu_feedback'}
+      ],
+      [
+        {text: '📰 Новости', url: 'https://t.me/strannstuff'}
+      ]
+    ]
+  };
+
+  telegramApi(getBotToken(), 'sendMessage', {
+    chat_id: chatId,
+    text: 'Выберите, что хотите сделать.',
+    reply_markup: keyboard
+  });
 }
 
 function buildOwnerNotificationText(orderId, orderRow, products) {
@@ -361,7 +384,7 @@ function sendStockFailureNotification(telegramId, orderId, itemsText, errorText)
   });
 }
 
-function attachOrderPhone(data) {
+function receiveContact(data) {
   const botToken = getBotToken();
   const apiToken = String(data.api_token || '');
   if (!apiToken || !constantTimeEqual(apiToken, botToken)) throw new Error('Недействительный API-токен.');
@@ -402,7 +425,7 @@ function attachOrderPhone(data) {
   try {
     sendOwnerNotificationForOrder(orderId, telegramId);
   } catch (error) {
-    console.error('Не удалось отправить уведомление с телефоном:', error);
+    console.error('Не удалось обновить уведомление с телефоном:', error);
   }
 
   return {ok: true, attached: true, orderId: orderId};
