@@ -11,6 +11,7 @@ const ORDERS_SHEET_NAME = 'Заказы';
 const COMPOSITION_SHEET_NAME = 'Состав';
 const BOT_TOKEN_PROPERTY = 'BOT_TOKEN';
 const MANAGED_CATEGORIES = ['repeat', 'service'];
+const PAYABLE_NOW_CATEGORIES = ['items', 'diogen', 'lockers'];
 const STOCK_API_URL = 'https://script.google.com/macros/s/AKfycbwHw6-UO84o6pPDyQ72PEb5qiOV9TeJBMrpjnvF9n-jtOokDYVf8w702IQKLvm_k6UxvQ/exec';
 
 const ORDERS_HEADERS = [
@@ -111,7 +112,7 @@ function createOrder(data) {
     const serviceCount = countCategory(runtimeProducts, 'service');
     const repeatOrder = repeatCount === runtimeProducts.length;
     const serviceOrder = serviceCount === runtimeProducts.length;
-    const payableGoodsTotal = Math.max(0, productTotal - managedTotal);
+    const payableGoodsTotal = calculatePayableNowTotal(runtimeProducts);
     const deliveryPrice = delivery.price == null ? 0 : delivery.price;
     const total = productTotal + deliveryPrice;
     const payableTotal = managedOrder ? 0 : payableGoodsTotal + deliveryPrice;
@@ -725,6 +726,13 @@ function calculateManagedTotal(products) {
   }, 0);
 }
 
+function calculatePayableNowTotal(products) {
+  return products.reduce((sum, product) => {
+    const category = String(product.category || '').trim().toLowerCase();
+    if (PAYABLE_NOW_CATEGORIES.indexOf(category) === -1) return sum;
+    return sum + normalizeMoney(product.price) * normalizeQuantity(product.quantity);
+  }, 0);
+}
 function countCategory(products, targetCategory) {
   return products.filter(product => String(product.category || '').trim().toLowerCase() === targetCategory).length;
 }
