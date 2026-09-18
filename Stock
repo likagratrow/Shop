@@ -1,9 +1,10 @@
+const SHEET_ID = '1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk';
 const SHEET_NAME = 'Прайс';
 
 
 function doGet() {
   const sheet = SpreadsheetApp
-    .getActiveSpreadsheet()
+    .openById(SHEET_ID)
     .getSheetByName(SHEET_NAME);
 
   if (!sheet) {
@@ -48,7 +49,7 @@ function checkAndDecrement(items) {
     }
 
     const sheet = SpreadsheetApp
-      .getActiveSpreadsheet()
+      .openById(SHEET_ID)
       .getSheetByName(SHEET_NAME);
 
     if (!sheet) {
