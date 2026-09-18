@@ -1,5 +1,6 @@
 const SHEET_ID = '1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk';
 const SHEET_NAME = 'Прайс';
+// GitHub deploy marker
 
 
 function doGet() {
