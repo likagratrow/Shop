@@ -28,7 +28,7 @@ if (tg) tg.expand();
 
 let products = [];
 let cart = [];
-let currentCategory = 'all';
+let currentCategory = 'items';
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -167,7 +167,7 @@ function setCartQuantity(id, quantity) {
 
     quantity = Math.max(0, Number(quantity) || 0);
     if (product.category !== 'items') quantity = quantity > 0 ? 1 : 0;
-    if (product.balance !== Infinity) quantity = Math.min(quantity, product.balance);
+    if (product.category === 'items' && product.balance !== Infinity) quantity = Math.min(quantity, product.balance);
 
     const index = cart.findIndex(item => String(item.id) === String(id));
 
@@ -185,10 +185,11 @@ function setCartQuantity(id, quantity) {
 
 function addToCart(id) {
     const product = products.find(item => String(item.id) === String(id));
-    if (!product || product.balance <= 0) return;
+    if (!product) return;
+    if (product.category === 'items' && product.balance <= 0) return;
 
     const current = getCartQuantity(id);
-    if (product.balance !== Infinity && current >= product.balance) return;
+    if (product.category === 'items' && product.balance !== Infinity && current >= product.balance) return;
 
     setCartQuantity(id, product.category === 'items' ? current + 1 : 1);
     animateCart();
@@ -211,7 +212,10 @@ function updateCartButton() {
 }
 
 function getCardButtonHtml(product) {
-    if (!product || product.balance <= 0) {
+    if (!product) {
+        return '<button type="button" class="card-cart-btn" disabled>Нет в наличии</button>';
+    }
+    if (product.category === 'items' && product.balance <= 0) {
         return '<button type="button" class="card-cart-btn" disabled>Нет в наличии</button>';
     }
 
@@ -444,7 +448,8 @@ function changeProductQuantity(id, delta) {
 
 function addProductToCartFromModal(id) {
     const product = products.find(item => String(item.id) === String(id));
-    if (!product || product.balance <= 0) return;
+    if (!product) return;
+    if (product.category === 'items' && product.balance <= 0) return;
     addToCart(id);
 
     const quantityEl = document.getElementById('product-quantity-value');
