@@ -20,7 +20,7 @@ const ORDERS_HEADERS = [
 ];
 
 const COMPOSITION_HEADERS = [
-  'ID заказа', 'Товар', 'Категория', 'Количество', 'Цена', 'Сумма', 'ID товара'
+  'ID заказа', 'Товар', 'Категория', 'Количество', 'Цена', 'Сумма'
 ];
 
 function doGet() {
@@ -119,7 +119,7 @@ function createOrder(data) {
       const category = String(product.category || '').trim().toLowerCase();
       const quantity = normalizeQuantity(product.quantity);
       const price = normalizeMoney(product.price);
-      return [orderId, name, category, quantity, price, price * quantity, String(product.id || '').trim()];
+      return [orderId, name, category, quantity, price, price * quantity];
     });
 
     if (compositionRows.length) {
@@ -388,7 +388,6 @@ function getCompositionProducts(sheet, orderId) {
     })
     .map(function(row) {
       return {
-        id: String(row[6] || '').trim(),
         name: String(row[1] || '').trim() || 'Без названия',
         category: String(row[2] || '').trim().toLowerCase(),
         quantity: normalizeQuantity(row[3]),
