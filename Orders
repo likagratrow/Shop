@@ -286,7 +286,7 @@ function sendCustomerFinalMessage(chatId, orderId, itemsText, meta) {
   } else if (meta.postOrderAction === 'paid') {
     text += '💳 Вы отметили, что оплатили заказ.\n\n';
   } else {
-    text += '⏳ Вы выбрали дождаться связи с менеджером до оплаты.\n\n';
+    text += '⏳ Вы выбрали дождаться связи с мастером до оплаты.\n\n';
   }
 
   if (meta.contactMethod === 'telegram') text += '💬 Связь: Telegram\n';
