@@ -423,9 +423,12 @@ function receiveContact(data) {
   if (!orderId) return {ok: true, attached: false};
 
   try {
-    sendOwnerNotificationForOrder(orderId, telegramId);
+    telegramApi(getBotToken(), 'sendMessage', {
+      chat_id: getOwnerTelegramId(),
+      text: '📱 К заказу №' + orderId + ' добавлен телефон: ' + phone
+    });
   } catch (error) {
-    console.error('Не удалось обновить уведомление с телефоном:', error);
+    console.error('Не удалось отправить обновление с телефоном:', error);
   }
 
   return {ok: true, attached: true, orderId: orderId};
