@@ -709,7 +709,7 @@ function showPostOrderV4() {
             <div class="payment-row">
                 <span class="payment-row-label">Телефон</span>
                 <span class="payment-phone" id="payment-phone-number">+79089147913</span>
-                <button type="button" class="order-btn copy-payment-phone" id="copy-payment-phone">Скопировать номер</button>
+                <button type="button" class="order-btn copy-payment-phone" id="copy-payment-phone" aria-label="Скопировать номер" title="Скопировать номер">${getCopyIconV4()}</button>
             </div>
             <div class="payment-row">
                 <span class="payment-row-label">Банк</span>
@@ -718,6 +718,10 @@ function showPostOrderV4() {
             <div class="payment-row">
                 <span class="payment-row-label">Получатель</span>
                 <span>Лия П.</span>
+            </div>
+            <div class="payment-row">
+                <span class="payment-row-label">К оплате</span>
+                <span><b>${formatPrice(payableNowTotalV4())} ₽</b></span>
             </div>
             <details class="payment-note">
                 <summary>Почему перевод</summary>
