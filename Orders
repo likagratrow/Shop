@@ -11,6 +11,7 @@ const ORDERS_SHEET_NAME = 'Заказы';
 const COMPOSITION_SHEET_NAME = 'Состав';
 const BOT_TOKEN_PROPERTY = 'BOT_TOKEN';
 const MANAGED_CATEGORIES = ['repeat', 'service'];
+const STOCK_API_URL = 'https://script.google.com/macros/s/AKfycbwHw6-UO84o6pPDyQ72PEb5qiOV9TeJBMrpjnvF9n-jtOokDYVf8w702IQKLvm_k6UxvQ/exec';
 
 const ORDERS_HEADERS = [
   'ID заказа', 'Дата', 'Telegram ID', 'Telegram',
@@ -37,6 +38,7 @@ function doPost(e) {
     const action = String(data.action || '');
 
     if (action === 'create-order') return jsonResponse(createOrder(data));
+    if (action === 'attach-order-phone') return jsonResponse(attachOrderPhone(data));
     if (action === 'get-order') return jsonResponse(getOrderForBot(data));
 
     throw new Error('Неизвестное действие: ' + action);
@@ -64,34 +66,65 @@ function createOrder(data) {
   const runtimeProducts = normalizeRuntimeProducts(products);
   const needsDelivery = Boolean(data.needs_delivery);
   const delivery = normalizeDelivery(data.delivery, needsDelivery);
+  const contactMethod = String(data.contact_method || '').trim().toLowerCase();
+  const postOrderAction = String(data.post_order_action || '').trim().toLowerCase();
+
+  if (!['telegram', 'phone'].includes(contactMethod)) {
+    throw new Error('Не выбран способ связи.');
+  }
+
+  const username = formatTelegramUsername(telegramUser.username);
+  if (contactMethod === 'telegram' && !username) {
+    throw new Error('Чтобы связаться через Telegram, добавьте @username в Telegram.');
+  }
+
+  const managedCount = countManagedProducts(runtimeProducts);
+  const managedOrder = managedCount === runtimeProducts.length;
+  const mixedOrder = managedCount > 0 && managedCount < runtimeProducts.length;
+
+  if (managedOrder) {
+    if (postOrderAction !== 'managed') throw new Error('Некорректное действие для заказа на заказ/сервис.');
+  } else if (!['paid', 'wait_manager'].includes(postOrderAction)) {
+    throw new Error('Не выбрано действие после заказа.');
+  }
 
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
+
+  let orderId;
+  let orderMeta;
+  let itemsText;
+  let telegramId;
 
   try {
     const ss = SpreadsheetApp.openById(SHEET_ID);
     const ordersSheet = getRequiredSheet(ss, ORDERS_SHEET_NAME, ORDERS_HEADERS);
     const compositionSheet = getRequiredSheet(ss, COMPOSITION_SHEET_NAME, COMPOSITION_HEADERS);
 
-    const orderId = nextOrderId(ordersSheet);
+    orderId = nextOrderId(ordersSheet);
     const now = new Date();
-    const telegramId = String(telegramUser.id);
-    const username = formatTelegramUsername(telegramUser.username);
+    telegramId = String(telegramUser.id);
 
     const productTotal = calculateTotal(runtimeProducts);
     const managedTotal = calculateManagedTotal(runtimeProducts);
-    const managedCount = countManagedProducts(runtimeProducts);
     const repeatCount = countCategory(runtimeProducts, 'repeat');
     const serviceCount = countCategory(runtimeProducts, 'service');
     const repeatOrder = repeatCount === runtimeProducts.length;
     const serviceOrder = serviceCount === runtimeProducts.length;
-    const managedOrder = managedCount === runtimeProducts.length;
-    const mixedOrder = managedCount > 0 && managedCount < runtimeProducts.length;
     const payableGoodsTotal = Math.max(0, productTotal - managedTotal);
     const deliveryPrice = delivery.price == null ? 0 : delivery.price;
     const total = productTotal + deliveryPrice;
     const payableTotal = managedOrder ? 0 : payableGoodsTotal + deliveryPrice;
-    const itemsText = buildItemsText(data.items, runtimeProducts);
+    itemsText = buildItemsText(data.items, runtimeProducts);
+
+    let paymentStatus = 'не оплачено';
+    if (postOrderAction === 'paid') paymentStatus = 'клиент подтвердил оплату';
+    if (postOrderAction === 'wait_manager') paymentStatus = 'клиент ожидает менеджера';
+    if (postOrderAction === 'managed') paymentStatus = 'требует согласования';
+
+    const contactComment = contactMethod === 'telegram' ? 'Связь: Telegram' : 'Связь: телефон';
+    const deliveryComment = formatDeliveryComment(delivery);
+    const comment = [deliveryComment, contactComment].filter(Boolean).join('; ');
 
     ordersSheet.appendRow([
       orderId,
@@ -102,11 +135,11 @@ function createOrder(data) {
       formatDeliveryForSheet(delivery),
       total,
       'новый',
-      'не оплачено',
+      paymentStatus,
       delivery.method_id,
       delivery.address,
       '',
-      formatDeliveryComment(delivery),
+      comment,
       String(telegramUser.first_name || '').trim(),
       delivery.method_title,
       delivery.price == null ? '' : delivery.price,
@@ -123,12 +156,15 @@ function createOrder(data) {
     });
 
     if (compositionRows.length) {
-      compositionSheet
-        .getRange(compositionSheet.getLastRow() + 1, 1, compositionRows.length, COMPOSITION_HEADERS.length)
-        .setValues(compositionRows);
+      compositionSheet.getRange(
+        compositionSheet.getLastRow() + 1,
+        1,
+        compositionRows.length,
+        COMPOSITION_HEADERS.length
+      ).setValues(compositionRows);
     }
 
-    const orderMeta = {
+    orderMeta = {
       productTotal: productTotal,
       managedTotal: managedTotal,
       payableGoodsTotal: payableGoodsTotal,
@@ -139,19 +175,227 @@ function createOrder(data) {
       serviceOrder: serviceOrder,
       mixedOrder: mixedOrder,
       needsDelivery: needsDelivery,
-      delivery: delivery
+      delivery: delivery,
+      postOrderAction: postOrderAction,
+      contactMethod: contactMethod
     };
 
-    sendOrderMessage(telegramId, orderId, itemsText, orderMeta);
-
-    return {
-      ok: true,
-      orderId: orderId,
-      telegramId: telegramId
-    };
   } finally {
     lock.releaseLock();
   }
+
+  // Пользователь уже завершил диалог в Mini App.
+  // Сначала отправляем ему финал и уведомляем владельца,
+  // а остатки обрабатываем отдельно и не делаем их условием успеха заказа.
+  try {
+    sendCustomerFinalMessage(telegramId, orderId, itemsText, orderMeta);
+  } catch (error) {
+    console.error('Не удалось отправить финал клиенту:', error);
+  }
+
+  if (orderMeta.contactMethod === 'telegram') {
+    try {
+      sendOwnerNotificationForOrder(orderId, telegramId);
+    } catch (error) {
+      console.error('Не удалось отправить уведомление владельцу:', error);
+    }
+  }
+
+  if (orderMeta.postOrderAction === 'paid' && !orderMeta.managedOrder) {
+    const stockResult = processStock(runtimeProducts);
+    if (!stockResult.ok) {
+      try {
+        sendStockFailureNotification(telegramId, orderId, itemsText, stockResult.error);
+      } catch (error) {
+        console.error('Не удалось отправить предупреждение об остатках:', error);
+      }
+    }
+  }
+
+  return { ok: true, orderId: orderId, telegramId: telegramId };
+}
+
+function processStock(products) {
+  const items = products
+    .filter(function(product) {
+      return MANAGED_CATEGORIES.indexOf(String(product.category || '').trim().toLowerCase()) === -1;
+    })
+    .map(function(product) {
+      return {
+        name: String(product.name || product.title || '').trim(),
+        quantity: normalizeQuantity(product.quantity)
+      };
+    });
+
+  if (!items.length) return { ok: true };
+
+  try {
+    const response = UrlFetchApp.fetch(STOCK_API_URL, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({action: 'check_and_decrement', items: items}),
+      muteHttpExceptions: true
+    });
+
+    const code = response.getResponseCode();
+    const body = response.getContentText();
+    if (code < 200 || code >= 300) {
+      console.error('Stock HTTP ' + code + ': ' + body);
+      return {ok: false, error: 'Не удалось связаться с системой остатков.'};
+    }
+
+    let result;
+    try { result = JSON.parse(body); }
+    catch (error) { return {ok: false, error: 'Система остатков вернула некорректный ответ.'}; }
+
+    console.log('Ответ системы остатков:', result);
+    return result && result.ok
+      ? {ok: true}
+      : {ok: false, error: String(result && result.error || 'Не удалось обновить остатки.')};
+  } catch (error) {
+    console.error('Ошибка системы остатков:', error);
+    return {ok: false, error: 'Не удалось связаться с системой остатков.'};
+  }
+}
+
+function sendCustomerFinalMessage(chatId, orderId, itemsText, meta) {
+  const delivery = meta.delivery || {};
+  const botToken = getBotToken();
+
+  let text = '✅ Заказ №' + orderId + '\n\n' + itemsText + '\n\n';
+
+  if (delivery.method_id) {
+    text += '🚚 Доставка: ' + delivery.method_title;
+    text += delivery.price == null ? ' — договорная\n' : ' — ' + formatMoney(delivery.price) + ' ₽\n';
+    if (delivery.service_title) text += '📦 Служба доставки: ' + delivery.service_title + '\n';
+    if (delivery.country) text += '🌍 Страна: ' + delivery.country + '\n';
+    if (delivery.address) text += '📍 Адрес: ' + delivery.address + '\n';
+    text += '\n';
+  }
+
+  if (meta.managedOrder) {
+    text += '⚒️ Заказ требует согласования.\n\n';
+  } else if (meta.postOrderAction === 'paid') {
+    text += '💳 Вы отметили, что оплатили заказ.\n\n';
+  } else {
+    text += '⏳ Вы выбрали дождаться связи с менеджером до оплаты.\n\n';
+  }
+
+  if (meta.contactMethod === 'telegram') text += '💬 Связь: Telegram\n';
+  if (meta.contactMethod === 'phone') text += '📱 Связь: телефон\n';
+
+  if (meta.managedOrder) {
+    text += '\nСпасибо! Всё записал и передал мастеру или менеджеру. Мы свяжемся с вами в рабочее время Пн–Пт, 10:00–18:00 (Екатеринбург).';
+  } else if (delivery.method_id === 'courier_ekb') {
+    text += '\nСпасибо! Всё записал и передал менеджеру) Сборка заказа обычно занимает один рабочий день, затем мы с вами свяжемся и обрадуем, что готовы организовать доставку. Спасибо за заказ!';
+  } else {
+    text += '\nСпасибо! Всё записал и передал менеджеру) Сборка заказа обычно занимает один рабочий день, затем мы с вами свяжемся и обрадуем, что можно забрать (или что он отправлен). Спасибо за заказ!';
+  }
+
+  telegramApi(botToken, 'sendMessage', {chat_id: chatId, text: text, parse_mode: 'HTML'});
+}
+
+function buildOwnerNotificationText(orderId, orderRow, products) {
+  const productTotal = calculateTotal(products);
+  const managedTotal = calculateManagedTotal(products);
+  const managedCount = countManagedProducts(products);
+  const managedOrder = managedCount === products.length;
+  const mixedOrder = managedCount > 0 && managedCount < products.length;
+  const deliveryPriceValue = orderRow[15];
+  const deliveryPrice = deliveryPriceValue === '' || deliveryPriceValue === null || deliveryPriceValue === undefined ? null : normalizeMoney(deliveryPriceValue);
+
+  let text = '🛍 НОВЫЙ ЗАКАЗ\n\n';
+  if (managedOrder || mixedOrder) text += '⚒️ НА ЗАКАЗ / СЕРВИС\n\n';
+  text += buildItemsTextFromProducts(products) + '\n\n';
+  text += '💰 К оплате сейчас: ' + formatMoney(managedOrder ? 0 : Math.max(0, productTotal - managedTotal) + (deliveryPrice == null ? 0 : deliveryPrice)) + ' ₽\n';
+  if (managedTotal) text += '⚒️ На заказ / сервис: ' + formatMoney(managedTotal) + ' ₽\n';
+  if (String(orderRow[5] || '').trim()) text += '🚚 Доставка: ' + String(orderRow[5]).trim() + '\n';
+  if (deliveryPrice == null && String(orderRow[9] || '').trim()) text += '💰 Итого: ' + formatMoney(Number(orderRow[6] || 0)) + ' ₽ + доставка по согласованию\n';
+  else text += '💰 Итого: ' + formatMoney(Number(orderRow[6] || 0)) + ' ₽\n';
+  if (orderRow[16]) text += '📦 Служба доставки: ' + String(orderRow[16]).trim() + '\n';
+  if (orderRow[17]) text += '🌍 Страна: ' + String(orderRow[17]).trim() + '\n';
+  if (orderRow[10]) text += '📍 Куда доставить: ' + String(orderRow[10]).trim() + '\n';
+  text += '\n👤 Клиент: ' + String(orderRow[13] || '').trim() + '\n';
+  if (orderRow[3]) text += '💬 Telegram: ' + String(orderRow[3]).trim() + '\n';
+  text += orderRow[11] ? '📱 Телефон: ' + String(orderRow[11]).trim() + '\n' : '📱 Телефон: не предоставлен\n';
+  text += '💬 Способ связи: ' + (String(orderRow[12] || '').indexOf('Связь: телефон') !== -1 ? 'телефон' : 'Telegram') + '\n';
+  const payment = String(orderRow[8] || '').trim();
+  if (payment === 'клиент подтвердил оплату') text += '\n💳 Клиент подтвердил оплату.';
+  else if (payment === 'клиент ожидает менеджера') text += '\n⏳ Клиент ожидает диалога перед оплатой.';
+  else if (payment === 'требует согласования') text += '\n⚒️ Заказ требует согласования.';
+  else if (payment) text += '\n💰 Статус оплаты: ' + payment;
+  return text;
+}
+
+function sendOwnerNotificationForOrder(orderId, telegramId) {
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const ordersSheet = ss.getSheetByName(ORDERS_SHEET_NAME);
+  const compositionSheet = ss.getSheetByName(COMPOSITION_SHEET_NAME);
+  if (!ordersSheet || !compositionSheet) throw new Error('Не найдены листы заказа.');
+  const orderRow = findOrderRow(ordersSheet, orderId);
+  if (!orderRow) throw new Error('Заказ не найден.');
+  if (String(orderRow[2] || '').trim() !== String(telegramId || '').trim()) throw new Error('Заказ принадлежит другому пользователю.');
+  const products = getCompositionProducts(compositionSheet, orderId);
+  if (!products.length) throw new Error('В составе заказа нет товаров.');
+  telegramApi(getBotToken(), 'sendMessage', {chat_id: getOwnerTelegramId(), text: buildOwnerNotificationText(orderId, orderRow, products)});
+}
+
+function getOwnerTelegramId() {
+  return 5219493908;
+}
+
+function sendStockFailureNotification(telegramId, orderId, itemsText, errorText) {
+  telegramApi(getBotToken(), 'sendMessage', {
+    chat_id: getOwnerTelegramId(),
+    text: '⚠️ ОСТАТКИ НЕ ОБНОВЛЕНЫ\n\nЗаказ №' + orderId + '\n' + itemsText + '\n\nTelegram ID: ' + telegramId + '\nПричина: ' + errorText
+  });
+}
+
+function attachOrderPhone(data) {
+  const botToken = getBotToken();
+  const apiToken = String(data.api_token || '');
+  if (!apiToken || !constantTimeEqual(apiToken, botToken)) throw new Error('Недействительный API-токен.');
+
+  const telegramId = String(data.telegram_id || '').trim();
+  const phone = String(data.phone || '').trim();
+  if (!telegramId) throw new Error('Не указан Telegram ID.');
+  if (!phone) throw new Error('Не указан телефон.');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  let orderId = '';
+
+  try {
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    const ordersSheet = ss.getSheetByName(ORDERS_SHEET_NAME);
+    const compositionSheet = ss.getSheetByName(COMPOSITION_SHEET_NAME);
+    if (!ordersSheet || !compositionSheet) throw new Error('Не найдены листы заказа.');
+
+    const lastRow = ordersSheet.getLastRow();
+    const rows = lastRow < 2 ? [] : ordersSheet.getRange(2, 1, lastRow - 1, ORDERS_HEADERS.length).getValues();
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const row = rows[i];
+      const rowTelegramId = String(row[2] || '').trim();
+      const comment = String(row[12] || '').trim();
+      const rowPhone = String(row[11] || '').trim();
+      if (rowTelegramId !== telegramId || rowPhone || comment.indexOf('Связь: телефон') === -1) continue;
+      orderId = String(row[0] || '').trim();
+      ordersSheet.getRange(i + 2, 12).setValue(phone);
+      break;
+    }
+  } finally {
+    lock.releaseLock();
+  }
+
+  if (!orderId) return {ok: true, attached: false};
+
+  try {
+    sendOwnerNotificationForOrder(orderId, telegramId);
+  } catch (error) {
+    console.error('Не удалось отправить уведомление с телефоном:', error);
+  }
+
+  return {ok: true, attached: true, orderId: orderId};
 }
 
 function normalizeRuntimeProducts(products) {
