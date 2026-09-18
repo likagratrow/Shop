@@ -381,7 +381,8 @@ function openProductModal(id) {
         ? `<div class="product-modal-stock">${escapeHtml(getStockText(product))}</div>`
         : '';
 
-    content.innerHTML = `${imagesHtml}<h2 class="product-modal-title">${escapeHtml(product.name)}</h2><div class="product-modal-description">${escapeHtml(product.description)}</div><div class="product-modal-price">${formatPrice(product.price)} ₽</div>${stockHtml}${quantityHtml}<button type="button" class="product-add-btn" ${product.balance <= 0 ? 'disabled' : ''} onclick="addProductToCartFromModal(${JSON.stringify(product.id)})">${product.balance <= 0 ? 'Нет в наличии' : 'В корзину'}</button>`;
+    const unavailable = product.category === 'items' && product.balance <= 0;
+    content.innerHTML = `${imagesHtml}<h2 class="product-modal-title">${escapeHtml(product.name)}</h2><div class="product-modal-description">${escapeHtml(product.description)}</div><div class="product-modal-price">${formatPrice(product.price)} ₽</div>${stockHtml}${quantityHtml}<button type="button" class="product-add-btn" ${unavailable ? 'disabled' : ''} onclick="addProductToCartFromModal(${JSON.stringify(product.id)})">${unavailable ? 'Нет в наличии' : 'В корзину'}</button>`;
     modal.style.display = 'block';
 }
 
