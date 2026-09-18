@@ -1,4 +1,7 @@
 import json
+import threading
+import time
+import urllib.error
 import urllib.request
 from telebot import types
 import telebot
@@ -60,23 +63,12 @@ def feedback_callback(call):
     reviews.start(bot, call.message.chat.id, orders_db)
 
 
-@bot.message_handler(content_types=['contact'])
-def store_contact(message):
-    state = orders_db.get(message.chat.id) or {}
-
-    # Индивидуальный заказ и обратная связь обрабатывают свои контакты сами.
-    if state.get('individual_order') or state.get('feedback'):
-        return
-
-    phone = str(message.contact.phone_number or '').strip()
-    if not phone:
-        return
-
+def _attach_phone_to_latest_order(telegram_id, phone, attempts=4):
     payload = json.dumps({
-        'action': 'receive-contact',
+        'action': 'attach-order-phone',
         'api_token': BOT_TOKEN,
-        'telegram_id': str(message.from_user.id),
-        'phone': phone
+        'telegram_id': str(telegram_id),
+        'phone': str(phone)
     }, ensure_ascii=False).encode('utf-8')
 
     request = urllib.request.Request(
@@ -89,12 +81,37 @@ def store_contact(message):
         method='POST'
     )
 
-    try:
-        with urllib.request.urlopen(request, timeout=5) as response:
-            result = json.loads(response.read().decode('utf-8'))
-        print('Передача Telegram contact в Orders:', result)
-    except Exception as error:
-        print('Не удалось передать Telegram contact в Orders:', repr(error))
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                result = json.loads(response.read().decode('utf-8'))
+            print('Привязка телефона к заказу:', result)
+            return
+        except Exception as error:
+            print('Не удалось привязать телефон к заказу:', repr(error))
+            if attempt + 1 < attempts:
+                time.sleep(1)
+
+
+@bot.message_handler(content_types=['contact'])
+def store_contact(message):
+    chat_id = message.chat.id
+    order = orders_db.get(chat_id) or {}
+
+    # Эти ветки сами обрабатывают контакт.
+    if order.get('individual_order') or order.get('feedback'):
+        return
+
+    phone = str(message.contact.phone_number or '').strip()
+    if not phone:
+        return
+
+    threading.Thread(
+        target=_attach_phone_to_latest_order,
+        args=(message.from_user.id, phone),
+        daemon=True
+    ).start()
+
 
 
 
