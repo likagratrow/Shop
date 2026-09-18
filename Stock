@@ -40,10 +40,13 @@ function doPost(e) {
 
 function checkAndDecrement(items) {
   const lock = LockService.getScriptLock();
-
   lock.waitLock(30000);
 
   try {
+    if (!Array.isArray(items) || !items.length) {
+      return jsonResponse({ ok: false, error: 'No items provided' });
+    }
+
     const sheet = SpreadsheetApp
       .getActiveSpreadsheet()
       .getSheetByName(SHEET_NAME);
@@ -56,13 +59,18 @@ function checkAndDecrement(items) {
     }
 
     const data = sheet.getDataRange().getValues();
-
-    // A = id
-    // D = balance
+    const requests = {};
 
     for (const item of items) {
-      const productId = String(item.id);
-      const requested = Number(item.quantity);
+      const name = String(item && item.name || '').trim();
+      const requested = Number(item && item.quantity);
+
+      if (!name) {
+        return jsonResponse({
+          ok: false,
+          error: 'Product name is required'
+        });
+      }
 
       if (!Number.isInteger(requested) || requested < 1) {
         return jsonResponse({
@@ -71,93 +79,86 @@ function checkAndDecrement(items) {
         });
       }
 
-      let found = false;
+      const key = normalizeProductName(name);
+      requests[key] = (requests[key] || 0) + requested;
+    }
+
+    const matched = {};
+
+    for (const key of Object.keys(requests)) {
+      const matches = [];
 
       for (let row = 1; row < data.length; row++) {
-        const id = String(data[row][0]);
-
-        if (id !== productId) {
-          continue;
-        }
-
-        found = true;
-
-        const balanceValue = String(data[row][3]).trim();
-
-        // Диоген и Локер — безлимитные
-        if (
-          balanceValue === '∞' ||
-          balanceValue.toLowerCase() === 'infinity'
-        ) {
-          break;
-        }
-
-        const balance = Number(balanceValue);
-
-        if (!Number.isInteger(balance) || balance < 0) {
-          return jsonResponse({
-            ok: false,
-            error: 'Invalid balance for product ' + productId
-          });
-        }
-
-        if (balance < requested) {
-          return jsonResponse({
-            ok: false,
-            error: 'Not enough stock',
-            product_id: productId,
-            available: balance
-          });
-        }
-
-        break;
+        const name = normalizeProductName(data[row][1]);
+        if (name === key) matches.push(row);
       }
 
-      if (!found) {
+      if (matches.length === 0) {
         return jsonResponse({
           ok: false,
-          error: 'Product not found: ' + productId
+          error: 'Product not found: ' + key
         });
       }
-    }
 
-    // Все товары проверены.
-    // Теперь уменьшаем остатки.
-    for (const item of items) {
-      const productId = String(item.id);
-      const requested = Number(item.quantity);
-
-      for (let row = 1; row < data.length; row++) {
-        const id = String(data[row][0]);
-
-        if (id !== productId) {
-          continue;
-        }
-
-        const balanceValue = String(data[row][3]).trim();
-
-        if (
-          balanceValue === '∞' ||
-          balanceValue.toLowerCase() === 'infinity'
-        ) {
-          break;
-        }
-
-        const balance = Number(balanceValue);
-
-        sheet.getRange(row + 1, 4).setValue(balance - requested);
-
-        break;
+      if (matches.length > 1) {
+        return jsonResponse({
+          ok: false,
+          error: 'Product name is ambiguous: ' + key
+        });
       }
+
+      const row = matches[0];
+      const balanceValue = String(data[row][3] ?? '').trim();
+
+      if (
+        balanceValue === '∞' ||
+        balanceValue === '♾' ||
+        balanceValue.toLowerCase() === 'infinity' ||
+        balanceValue.toLowerCase() === 'inf'
+      ) {
+        matched[key] = {row, unlimited: true, balance: Infinity};
+        continue;
+      }
+
+      const balance = Number(balanceValue);
+      if (!Number.isInteger(balance) || balance < 0) {
+        return jsonResponse({
+          ok: false,
+          error: 'Invalid balance for product ' + key
+        });
+      }
+
+      if (balance < requests[key]) {
+        return jsonResponse({
+          ok: false,
+          error: 'Not enough stock',
+          product_name: String(data[row][1] || ''),
+          available: balance
+        });
+      }
+
+      matched[key] = {row, unlimited: false, balance};
     }
 
-    return jsonResponse({
-      ok: true
-    });
+    for (const key of Object.keys(requests)) {
+      const item = matched[key];
+      if (!item || item.unlimited) continue;
+      sheet.getRange(item.row + 1, 4).setValue(item.balance - requests[key]);
+    }
+
+    return jsonResponse({ ok: true });
 
   } finally {
     lock.releaseLock();
   }
+}
+
+function normalizeProductName(value) {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
 }
 
 
