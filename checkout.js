@@ -811,33 +811,55 @@ function requestPhoneV4() {
     });
 }
 
+function getCopyIconV4() {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2"></rect><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" fill="none" stroke="currentColor" stroke-width="2"></path></svg>';
+}
+
+function getCheckIconV4() {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+}
+
+function payableNowTotalV4() {
+    const payableCategories = new Set(['items', 'diogen', 'lockers']);
+    return cart.reduce((sum, item) => {
+        const category = String(item.category || '').trim().toLowerCase();
+        if (!payableCategories.has(category)) return sum;
+        return sum + Number(item.price || 0) * Number(item.count || 0);
+    }, 0);
+}
+
 function copyPaymentPhoneV4(button) {
     const phone = '+79089147913';
     const markCopied = () => {
         if (!button) return;
-        const original = button.innerText;
-        button.innerText = '✓ Скопировано';
-        setTimeout(() => { button.innerText = original; }, 1800);
+        const original = button.innerHTML;
+        const originalLabel = button.getAttribute('aria-label') || 'Скопировать номер';
+        button.innerHTML = getCheckIconV4();
+        button.setAttribute('aria-label', 'Номер скопирован');
+        button.setAttribute('title', 'Номер скопирован');
+        setTimeout(() => {
+            button.innerHTML = original;
+            button.setAttribute('aria-label', originalLabel);
+            button.setAttribute('title', 'Скопировать номер');
+        }, 10000);
     };
 
     if (navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(phone)
-            .then(markCopied)
-            .catch(() => {
-                try {
-                    const area = document.createElement('textarea');
-                    area.value = phone;
-                    area.style.position = 'fixed';
-                    area.style.opacity = '0';
-                    document.body.appendChild(area);
-                    area.select();
-                    document.execCommand('copy');
-                    area.remove();
-                    markCopied();
-                } catch (error) {
-                    console.warn('Не удалось скопировать номер:', error);
-                }
-            });
+        navigator.clipboard.writeText(phone).then(markCopied).catch(() => {
+            try {
+                const area = document.createElement('textarea');
+                area.value = phone;
+                area.style.position = 'fixed';
+                area.style.opacity = '0';
+                document.body.appendChild(area);
+                area.select();
+                document.execCommand('copy');
+                area.remove();
+                markCopied();
+            } catch (error) {
+                console.warn('Не удалось скопировать номер:', error);
+            }
+        });
         return;
     }
 
@@ -855,7 +877,6 @@ function copyPaymentPhoneV4(button) {
         console.warn('Не удалось скопировать номер:', error);
     }
 }
-
 function buildCompleteOrderPayloadV4() {
     const delivery = checkoutStateV4?.delivery || null;
     return {
