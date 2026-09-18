@@ -17,7 +17,8 @@ const MANAGED_CATEGORIES = ['repeat', 'service'];
 const ORDERS_HEADERS = [
   'ID заказа', 'Дата', 'Telegram ID', 'Telegram',
   'Товары', 'Доставка', 'Итого', 'Статус',
-  'Оплата', 'Получение', 'Адрес', 'Телефон', 'Комментарий'
+  'Оплата', 'Получение', 'Адрес', 'Телефон', 'Комментарий',
+  'Имя', 'Способ доставки', 'Стоимость доставки', 'Служба доставки', 'Страна'
 ];
 
 const COMPOSITION_HEADERS = [
@@ -109,7 +110,12 @@ function createOrder(data) {
       delivery.method_id,
       delivery.address,
       '',
-      formatDeliveryComment(delivery)
+      formatDeliveryComment(delivery),
+      String(telegramUser.first_name || '').trim(),
+      delivery.method_title,
+      delivery.price == null ? '' : delivery.price,
+      delivery.service_title,
+      delivery.country
     ]);
 
     const compositionRows = products.map(function(product) {
@@ -307,11 +313,11 @@ function getOrderForBot(data) {
   if (!orderId) throw new Error('Не указан ID заказа.');
   if (!telegramId) throw new Error('Не указан Telegram ID.');
 
-  cleanupExpiredOrderPayloads();
-
   const ss = SpreadsheetApp.openById(SHEET_ID);
   const ordersSheet = ss.getSheetByName(ORDERS_SHEET_NAME);
+  const compositionSheet = ss.getSheetByName(COMPOSITION_SHEET_NAME);
   if (!ordersSheet) throw new Error('Не найден лист Заказы.');
+  if (!compositionSheet) throw new Error('Не найден лист Состав.');
 
   const orderRow = findOrderRow(ordersSheet, orderId);
   if (!orderRow) throw new Error('Заказ не найден.');
@@ -319,12 +325,25 @@ function getOrderForBot(data) {
   const storedTelegramId = String(orderRow[2] || '').trim();
   if (storedTelegramId !== telegramId) throw new Error('Этот заказ принадлежит другому Telegram пользователю.');
 
-  const payload = loadOrderPayload(orderId);
-  if (!payload || !Array.isArray(payload.products) || !payload.products.length) {
-    throw new Error('Не удалось восстановить состав заказа.');
-  }
+  const products = getCompositionProducts(compositionSheet, orderId);
+  if (!products.length) throw new Error('В листе Состав не найден состав заказа.');
 
-  const products = payload.products;
+  const productTotal = calculateTotal(products);
+  const managedTotal = calculateManagedTotal(products);
+  const managedCount = countManagedProducts(products);
+  const repeatCount = countCategory(products, 'repeat');
+  const serviceCount = countCategory(products, 'service');
+  const managedOrder = managedCount === products.length;
+  const repeatOrder = repeatCount === products.length;
+  const serviceOrder = serviceCount === products.length;
+  const mixedOrder = managedCount > 0 && managedCount < products.length;
+
+  const deliveryPriceText = String(orderRow[15] || '').trim();
+  const deliveryPrice = deliveryPriceText === '' ? null : normalizeMoney(orderRow[15]);
+  const payableGoodsTotal = Math.max(0, productTotal - managedTotal);
+  const payableTotal = managedOrder
+    ? 0
+    : payableGoodsTotal + (deliveryPrice == null ? 0 : deliveryPrice);
 
   return {
     ok: true,
@@ -332,25 +351,26 @@ function getOrderForBot(data) {
       order_id: orderId,
       telegram_id: storedTelegramId,
       username: String(orderRow[3] || '').trim(),
+      first_name: String(orderRow[13] || '').trim(),
       items: buildItemsTextFromProducts(products),
       products: products,
-      product_total: Number(payload.product_total || 0),
-      payable_goods_total: Number(payload.payable_goods_total || 0),
-      payable_total: Number(payload.payable_total || 0),
-      managed_product_total: Number(payload.managed_product_total || 0),
-      total: Number(payload.total || orderRow[6] || 0),
-      needs_delivery: Boolean(payload.needs_delivery),
-      managed_order: Boolean(payload.managed_order),
-      repeat_order: Boolean(payload.repeat_order),
-      service_order: Boolean(payload.service_order),
-      mixed_order: Boolean(payload.mixed_order),
+      product_total: productTotal,
+      payable_goods_total: payableGoodsTotal,
+      payable_total: payableTotal,
+      managed_product_total: managedTotal,
+      total: Number(orderRow[6] || 0),
+      needs_delivery: Boolean(String(orderRow[5] || '').trim() || String(orderRow[9] || '').trim()),
+      managed_order: managedOrder,
+      repeat_order: repeatOrder,
+      service_order: serviceOrder,
+      mixed_order: mixedOrder,
       delivery: String(orderRow[5] || '').trim(),
-      delivery_id: String((payload.delivery || {}).method_id || '').trim(),
-      delivery_title: String((payload.delivery || {}).method_title || '').trim(),
-      delivery_price: (payload.delivery || {}).price == null ? null : Number((payload.delivery || {}).price),
-      delivery_service: String((payload.delivery || {}).service_title || '').trim(),
-      delivery_country: String((payload.delivery || {}).country || '').trim(),
-      delivery_address: String((payload.delivery || {}).address || '').trim(),
+      delivery_id: String(orderRow[9] || '').trim(),
+      delivery_title: String(orderRow[14] || '').trim(),
+      delivery_price: deliveryPrice,
+      delivery_service: String(orderRow[16] || '').trim(),
+      delivery_country: String(orderRow[17] || '').trim(),
+      delivery_address: String(orderRow[10] || '').trim(),
       status: String(orderRow[7] || '').trim(),
       payment: String(orderRow[8] || '').trim(),
       receiving: String(orderRow[9] || '').trim(),
@@ -361,9 +381,28 @@ function getOrderForBot(data) {
   };
 }
 
+function getCompositionProducts(sheet, orderId) {
+  if (sheet.getLastRow() < 2) return [];
+
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, COMPOSITION_HEADERS.length).getValues();
+  return rows
+    .filter(function(row) {
+      return String(row[0] || '').trim() === String(orderId);
+    })
+    .map(function(row) {
+      return {
+        id: '',
+        name: String(row[1] || '').trim() || 'Без названия',
+        category: String(row[2] || '').trim().toLowerCase(),
+        quantity: normalizeQuantity(row[3]),
+        price: normalizeMoney(row[4])
+      };
+    });
+}
+
 function findOrderRow(sheet, orderId) {
   if (sheet.getLastRow() < 2) return null;
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 13).getValues();
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 18).getValues();
   for (let i = 0; i < rows.length; i++) {
     if (String(rows[i][0] || '').trim() === orderId) return rows[i];
   }
