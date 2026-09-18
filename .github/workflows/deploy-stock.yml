@@ -1,0 +1,65 @@
+name: Deploy Stock Apps Script
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Stock'
+      - '.github/workflows/deploy-stock.yml'
+
+jobs:
+  deploy-stock:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Prepare Apps Script project
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p apps-script
+          cp Stock apps-script/Stock.gs
+          cat > apps-script/.clasp.json <<'EOF'
+          {
+            "scriptId": "15uJ9YuranR8gp3UH0Oe_F8KQqNusG6xhJNShG-bjXnXfty4U4CK9jbNn"
+          }
+          EOF
+          cat > apps-script/appsscript.json <<'EOF'
+          {
+            "timeZone": "Asia/Yekaterinburg",
+            "dependencies": {},
+            "exceptionLogging": "STACKDRIVER",
+            "runtimeVersion": "V8",
+            "webapp": {
+              "executeAs": "USER_DEPLOYING",
+              "access": "ANYONE_ANONYMOUS"
+            }
+          }
+          EOF
+
+      - name: Setup clasp credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' '${{ secrets.CLASPRC_JSON }}' > ~/.clasprc.json
+
+      - name: Push source to Apps Script
+        working-directory: apps-script
+        run: npx @google/clasp@latest push --force
+
+      - name: Update existing deployment
+        working-directory: apps-script
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          npx @google/clasp@latest create-deployment \
+            --deploymentId "AKfycbwHw6-UO84o6pPDyQ72PEb5qiOV9TeJBMrpjnvF9n-jtOokDYVf8w702IQKLvm_k6UxvQ" \
+            --description "GitHub ${COMMIT_SHA:0:7}"
