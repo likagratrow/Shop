@@ -167,6 +167,11 @@ checkoutStyleV4.textContent = `
         text-align: left;
     }
     .checkout-option small { opacity: .75; }
+    .checkout-option.selected {
+        background: color-mix(in srgb, var(--tg-theme-button-color, #2481cc) 16%, var(--tg-theme-secondary-bg-color, #f5f5f5));
+        border-color: var(--tg-theme-button-color, #2481cc);
+        box-shadow: 0 0 0 1px color-mix(in srgb, var(--tg-theme-button-color, #2481cc) 18%, transparent);
+    }
     .checkout-input,
     .checkout-country-search {
         width: 100%;
@@ -174,9 +179,55 @@ checkoutStyleV4.textContent = `
         padding: 11px 12px;
         margin: 6px 0 10px;
         border-radius: 9px;
-        border: 1px solid #ccc;
-        background: var(--tg-theme-secondary-bg-color, #eee);
-        color: currentcolor;
+        border: 1px solid #555;
+        background: #2a2a2a;
+        color: #fff !important;
+        caret-color: #fff;
+    }
+    .checkout-input::placeholder,
+    .checkout-country-search::placeholder {
+        color: #bdbdbd;
+        opacity: 1;
+    }
+    .payment-info {
+        margin: 8px 0 14px;
+        padding: 12px 13px;
+        border: 1px solid color-mix(in srgb, var(--tg-theme-button-color, #2481cc) 18%, #bbb);
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--tg-theme-button-color, #2481cc) 5%, var(--tg-theme-bg-color, #fff));
+    }
+    .payment-title { font-weight: 700; margin-bottom: 7px; }
+    .payment-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+    .payment-row-label { min-width: 88px; }
+    .payment-phone {
+        flex: 1 1 auto;
+        font-weight: 700;
+        letter-spacing: .2px;
+    }
+    .copy-payment-phone {
+        flex: none !important;
+        width: auto !important;
+        min-width: 132px;
+        margin: 0 !important;
+        padding: 8px 10px !important;
+        font-size: 13px !important;
+    }
+    .payment-note {
+        margin-top: 10px;
+        border-top: 1px solid color-mix(in srgb, var(--tg-theme-button-color, #2481cc) 12%, transparent);
+        padding-top: 9px;
+    }
+    .payment-note summary {
+        cursor: pointer;
+        color: var(--tg-theme-hint-color, #777);
+        font-size: 13px;
+        user-select: none;
+    }
+    .payment-note-content {
+        margin-top: 8px;
+        font-size: 13px;
+        line-height: 1.45;
+        color: var(--tg-theme-text-color, #000);
     }
     .checkout-country-list {
         max-height: 260px;
@@ -423,6 +474,10 @@ async function renderDeliveryStepV4() {
         document.querySelectorAll('[data-delivery-service]').forEach(button => {
             button.addEventListener('click', () => {
                 checkoutStateV4.service = services.find(item => item.id === button.dataset.deliveryService) || null;
+                document.querySelectorAll('[data-delivery-service]').forEach(item => item.classList.toggle(
+                    'selected',
+                    item.dataset.deliveryService === checkoutStateV4.service?.id
+                ));
                 renderRussiaPointV4();
             });
         });
@@ -572,28 +627,61 @@ function getOrderKindV4() {
 
 function showPostOrderV4() {
     const kind = getOrderKindV4();
+    const hasItems = cart.some(item => String(item.category || '').trim().toLowerCase() === 'items');
+
     postOrderStateV4 = {
-        action: kind.managedOrder ? 'managed' : null,
+        action: kind.managedOrder ? 'managed' : (!hasItems ? 'wait_manager' : null),
         contactMethod: null,
         busy: false
     };
 
     if (kind.managedOrder) {
-        showContactChoiceV4('⚒️ Этот заказ требует согласования с мастером или менеджером.\n\nКак с вами связаться?');
+        showContactChoiceV4('⚒️ Этот заказ требует согласования с мастером.\n\nКак с вами связаться?');
+        return;
+    }
+
+    if (!hasItems) {
+        showContactChoiceV4('⚒️ Этот заказ требует согласования с мастером.\n\nКак с вами связаться?');
         return;
     }
 
     const mixedHint = kind.mixedOrder
-        ? '<div class="checkout-summary">Часть заказа требует согласования с мастером или менеджером.</div>'
+        ? '<div class="checkout-summary">⚒️ Часть заказа требует согласования с мастером.</div>'
         : '';
+
+    const paymentBlock = `
+        <div class="payment-info">
+            <div class="payment-title">💳 Оплата переводом</div>
+            <div class="payment-row">
+                <span class="payment-row-label">Телефон</span>
+                <span class="payment-phone" id="payment-phone-number">+79089147913</span>
+                <button type="button" class="order-btn copy-payment-phone" id="copy-payment-phone">Скопировать номер</button>
+            </div>
+            <div class="payment-row">
+                <span class="payment-row-label">Банк</span>
+                <span>Сбербанк</span>
+            </div>
+            <div class="payment-row">
+                <span class="payment-row-label">Получатель</span>
+                <span>Лия П.</span>
+            </div>
+            <details class="payment-note">
+                <summary>Почему перевод</summary>
+                <div class="payment-note-content">Я работаю как самозанятая, поэтому принимаю оплату переводом. Чек выдается лично или в Telegram. Спасибо за понимание!</div>
+            </details>
+        </div>
+    `;
 
     showCheckoutV4(`
         <div class="checkout-title">✅ Заказ готов</div>
         <div class="checkout-summary">Здесь можно выбрать, что делать дальше.</div>
+        ${paymentBlock}
         ${mixedHint}
         <button type="button" class="post-order-option" id="post-order-paid">💳 <b>Я оплатил</b></button>
-        <button type="button" class="post-order-option" id="post-order-manager">⏳ <b>Подожду менеджера</b></button>
+        <button type="button" class="post-order-option" id="post-order-manager">⏳ <b>Подожду мастера</b></button>
     `);
+
+    document.getElementById('copy-payment-phone')?.addEventListener('click', copyPaymentPhoneV4);
 
     document.getElementById('post-order-paid')?.addEventListener('click', () => {
         postOrderStateV4.action = 'paid';
@@ -661,12 +749,53 @@ function requestPhoneV4() {
             return;
         }
 
-        showCheckoutV4(`
-            <div class="checkout-error">Номер телефона не отправлен.</div>
-            <div class="checkout-actions"><button type="button" class="order-btn" id="contact-phone-again">К выбору контакта</button></div>
-        `);
-        document.getElementById('contact-phone-again')?.addEventListener('click', () => showContactChoiceV4('Как с вами связаться?'));
+        showContactChoiceV4('Как с вами связаться?');
     });
+}
+
+function copyPaymentPhoneV4(button) {
+    const phone = '+79089147913';
+    const markCopied = () => {
+        if (!button) return;
+        const original = button.innerText;
+        button.innerText = '✓ Скопировано';
+        setTimeout(() => { button.innerText = original; }, 1800);
+    };
+
+    if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(phone)
+            .then(markCopied)
+            .catch(() => {
+                try {
+                    const area = document.createElement('textarea');
+                    area.value = phone;
+                    area.style.position = 'fixed';
+                    area.style.opacity = '0';
+                    document.body.appendChild(area);
+                    area.select();
+                    document.execCommand('copy');
+                    area.remove();
+                    markCopied();
+                } catch (error) {
+                    console.warn('Не удалось скопировать номер:', error);
+                }
+            });
+        return;
+    }
+
+    try {
+        const area = document.createElement('textarea');
+        area.value = phone;
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        area.remove();
+        markCopied();
+    } catch (error) {
+        console.warn('Не удалось скопировать номер:', error);
+    }
 }
 
 function buildCompleteOrderPayloadV4() {
@@ -689,16 +818,34 @@ function buildCompleteOrderPayloadV4() {
     };
 }
 
+function showThankYouPopupV4() {
+    const closeApp = () => {
+        try { tg.close(); }
+        catch (error) { console.warn('Не удалось закрыть Mini App:', error); }
+    };
+
+    if (tg?.showPopup) {
+        tg.showPopup({
+            title: 'Спасибо за заказ!',
+            message: 'Всё записал и передал мастеру.',
+            buttons: [{id: 'done', type: 'default', text: '🤝'}]
+        }, closeApp);
+        return;
+    }
+
+    showCheckoutV4(`
+        <div class="checkout-title">Спасибо за заказ! 🤝</div>
+        <div class="checkout-summary">Всё записал и передал мастеру.</div>
+        <button type="button" class="order-btn" id="thank-you-close">🤝</button>
+    `);
+    document.getElementById('thank-you-close')?.addEventListener('click', closeApp);
+}
+
 function sendCompleteOrderV4() {
     if (!tg?.initData || !postOrderStateV4 || postOrderStateV4.busy) return;
 
     postOrderStateV4.busy = true;
     const body = JSON.stringify(buildCompleteOrderPayloadV4());
-
-    showCheckoutV4(`
-        <div class="checkout-title">✅ Готово</div>
-        <div class="checkout-summary">Всё записал. Магазин сейчас закроется, а итоговое сообщение придёт в Telegram.</div>
-    `);
 
     let handedOff = false;
     try {
@@ -726,10 +873,7 @@ function sendCompleteOrderV4() {
         }
     }
 
-    setTimeout(() => {
-        try { tg.close(); }
-        catch (error) { console.warn('Не удалось закрыть Mini App:', error); }
-    }, 80);
+    showThankYouPopupV4();
 }
 const previousRenderCartV4 = renderCart;
 renderCart = function() {
