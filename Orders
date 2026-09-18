@@ -263,7 +263,7 @@ function sendOrderMessage(chatId, orderId, itemsText, meta) {
       text: text,
       reply_markup: JSON.stringify({
         inline_keyboard: [[
-          {text: '📞 Оставить контакт', callback_data: 'order_contact'}
+          {text: '📞 Оставить контакт', callback_data: 'order_contact:' + orderId}
         ]]
       })
     });
@@ -296,8 +296,8 @@ function sendOrderMessage(chatId, orderId, itemsText, meta) {
     parse_mode: 'HTML',
     reply_markup: JSON.stringify({
       inline_keyboard: [[
-        {text: '💳 Я оплатил', callback_data: 'paid'},
-        {text: '⏳ Подожду менеджера', callback_data: 'wait_manager'}
+        {text: '💳 Я оплатил', callback_data: 'paid:' + orderId},
+        {text: '⏳ Подожду менеджера', callback_data: 'wait_manager:' + orderId}
       ]]
     })
   });
