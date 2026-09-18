@@ -77,7 +77,7 @@ def _load_order(chat_id, order_id):
         "delivery_country": str(source.get("delivery_country") or "").strip(),
         "delivery_address": str(source.get("delivery_address") or source.get("address") or "").strip(),
         "username": username,
-        "first_name": "",
+        "first_name": str(source.get("first_name") or "").strip(),
         "completed": False,
     }
 
@@ -96,10 +96,6 @@ def _load_and_call(call, callback_name, order_id):
             pass
         return
 
-    order["first_name"] = call.from_user.first_name or ""
-    if call.from_user.username:
-        order["username"] = call.from_user.username
-
     handler = getattr(_main(), callback_name, None)
     if handler is None:
         try:
@@ -110,43 +106,44 @@ def _load_and_call(call, callback_name, order_id):
 
     handler(call)
 
-
 def register():
     bot = _bot()
 
     @bot.callback_query_handler(
-        func=lambda call: call.data == "paid" and "Ваш заказ №" in str(call.message.text or "")
+        func=lambda call: _is_order_callback(call.data, "paid")
     )
     def paid_from_orders(call):
-        order_id = _latest_order_id_from_callback_message(call)
+        order_id = _order_id_from_callback_data(call.data, "paid")
         if order_id:
             _load_and_call(call, "paid", order_id)
         else:
             try:
-                bot.answer_callback_query(call.id, "Не удалось определить заказ.")
+                bot.answer_callback_query(call.id, "Не удалось определить номер заказа.")
             except Exception:
                 pass
 
     @bot.callback_query_handler(
-        func=lambda call: call.data == "wait_manager" and "Ваш заказ №" in str(call.message.text or "")
+        func=lambda call: _is_order_callback(call.data, "wait_manager")
     )
     def wait_manager_from_orders(call):
-        order_id = _latest_order_id_from_callback_message(call)
+        order_id = _order_id_from_callback_data(call.data, "wait_manager")
         if order_id:
             _load_and_call(call, "wait_manager", order_id)
         else:
             try:
-                bot.answer_callback_query(call.id, "Не удалось определить заказ.")
+                bot.answer_callback_query(call.id, "Не удалось определить номер заказа.")
             except Exception:
                 pass
 
-    @bot.callback_query_handler(func=lambda call: str(call.data).startswith("order_contact"))
+    @bot.callback_query_handler(
+        func=lambda call: _is_order_callback(call.data, "order_contact")
+    )
     def managed_contact_from_orders(call):
-        order_id = _latest_order_id_from_callback_message(call)
+        order_id = _order_id_from_callback_data(call.data, "order_contact")
 
         if not order_id:
             try:
-                bot.answer_callback_query(call.id, "Не удалось определить заказ.")
+                bot.answer_callback_query(call.id, "Не удалось определить номер заказа.")
             except Exception:
                 pass
             return
@@ -159,20 +156,36 @@ def register():
                 pass
             return
 
-        order["first_name"] = call.from_user.first_name or ""
-        if call.from_user.username:
-            order["username"] = call.from_user.username
-
         try:
             bot.answer_callback_query(call.id, "Хорошо")
         except Exception:
             pass
 
         request_contact = getattr(_main(), "request_contact", None)
-        managed_contact_text = getattr(_main(), "MANAGED_CONTACT_TEXT", "Оставьте контакт, и менеджер свяжется с вами.")
+        managed_contact_text = getattr(
+            _main(),
+            "MANAGED_CONTACT_TEXT",
+            "Оставьте контакт, и менеджер свяжется с вами."
+        )
         if request_contact:
             request_contact(call.message.chat.id, managed_contact_text)
 
+
+def _is_order_callback(data, action):
+    return str(data or "").startswith(action + ":")
+
+
+def _order_id_from_callback_data(data, action):
+    prefix = action + ":"
+    value = str(data or "")
+    if not value.startswith(prefix):
+        return ""
+
+    order_id = value[len(prefix):].strip()
+    if not order_id or not order_id.isdigit():
+        return ""
+
+    return order_id
 
 def _latest_order_id_from_callback_message(call):
     text = str(call.message.text or "")
