@@ -330,7 +330,7 @@ function renderCart() {
                 return `<div class="cart-item" data-index="${index}" style="margin-bottom:15px;"><div><b>${escapeHtml(item.name)}</b></div><div style="display:flex;align-items:center;margin-top:8px;"><span style="margin-left:auto;">${formatPrice(item.price)} ₽</span><button type="button" class="cart-remove" data-index="${index}" style="width:40px;height:36px;margin-left:10px;">🗑️</button></div></div>`;
             }
 
-            const plusDisabled = item.balance !== Infinity && item.count >= item.balance;
+            const plusDisabled = !isUnlimitedBalanceValue(item.balance) && item.count >= item.balance;
             return `<div class="cart-item" data-index="${index}" style="margin-bottom:15px;"><div style="margin-bottom:8px;"><b>${escapeHtml(item.name)}</b></div><div style="display:flex;align-items:center;gap:10px;"><button type="button" class="cart-minus" data-index="${index}" style="width:40px;height:36px;">−</button><span style="min-width:20px;text-align:center;">${item.count}</span><button type="button" class="cart-plus" data-index="${index}" ${plusDisabled ? 'disabled' : ''} style="width:40px;height:36px;">+</button><span style="margin-left:auto;">${formatPrice(item.price * item.count)} ₽</span><button type="button" class="cart-remove" data-index="${index}" style="width:40px;height:36px;">🗑️</button></div></div>`;
         }).join('');
     }
@@ -378,7 +378,7 @@ function openProductModal(id) {
     let quantityHtml = '';
     if (product.category === 'items') {
         const displayedQuantity = currentQuantity > 0 ? currentQuantity : 1;
-        const plusDisabled = product.balance !== Infinity && displayedQuantity >= product.balance;
+        const plusDisabled = !isUnlimitedBalanceValue(product.balance) && displayedQuantity >= product.balance;
         quantityHtml = `<div class="product-quantity"><button type="button" onclick="changeProductQuantity(${JSON.stringify(product.id)}, -1)">−</button><span id="product-quantity-value">${displayedQuantity}</span><button type="button" ${plusDisabled || product.balance <= 0 ? 'disabled' : ''} onclick="changeProductQuantity(${JSON.stringify(product.id)}, 1)">+</button></div>`;
     }
 
@@ -449,7 +449,7 @@ function changeProductQuantity(id, delta) {
     }
 
     const plusButton = document.querySelector('.product-quantity button:last-child');
-    if (plusButton) plusButton.disabled = product.balance !== Infinity && quantity >= product.balance;
+    if (plusButton) plusButton.disabled = !isUnlimitedBalanceValue(product.balance) && quantity >= product.balance;
 }
 
 function addProductToCartFromModal(id) {
