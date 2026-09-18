@@ -273,6 +273,16 @@ function sendCustomerFinalMessage(chatId, orderId, itemsText, meta) {
     text += '\n';
   }
 
+  text += '💰 К оплате сейчас: ' + formatMoney(meta.managedOrder ? 0 : meta.payableTotal) + ' ₽\n';
+  if (meta.mixedOrder && meta.managedTotal > 0) {
+    text += '⚒️ На заказ / сервис: ' + formatMoney(meta.managedTotal) + ' ₽\n';
+  }
+  if (delivery.price == null && delivery.method_id) {
+    text += '💰 Итого: ' + formatMoney(meta.payableTotal) + ' ₽ + доставка по согласованию\n\n';
+  } else {
+    text += '💰 Итого: ' + formatMoney(meta.total) + ' ₽\n\n';
+  }
+
   if (meta.managedOrder) {
     text += '⚒️ Заказ требует согласования.\n\n';
   } else if (meta.postOrderAction === 'paid') {
