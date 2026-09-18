@@ -21,6 +21,7 @@ const PRODUCT_COLUMNS = Object.freeze({
 
 const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
 const STOCK_API_URL = 'https://script.google.com/macros/s/AKfycbwwQkE9C1U82T0LoYv9umYrc-pmeD0KSZPZ0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg/exec';
+const ORDERS_API_URL = 'https://script.google.com/macros/s/AKfycbz2XQn7s0e_irZ2rRsvcXb_I7hKp_DxNXTYsZlIt2TATE58IiqJ9AyjUKj9f09-CII9/exec';
 const tg = window.Telegram?.WebApp;
 
 if (tg) tg.expand();
@@ -42,10 +43,16 @@ function formatPrice(value) {
     return new Intl.NumberFormat('ru-RU').format(Number(value) || 0);
 }
 
-function parseBalance(value) {
-    const text = String(value ?? '').trim();
-    if (text === '∞' || text.toLowerCase() === 'infinity') return Infinity;
-    const number = Number(text);
+function parseBalance(value, formattedValue = '') {
+    const candidates = [value, formattedValue];
+
+    for (const candidate of candidates) {
+        const text = String(candidate ?? '').trim().normalize('NFKC').toLowerCase();
+        if (!text) continue;
+        if (/[∞♾]/u.test(text) || text === 'infinity' || text === 'inf') return Infinity;
+    }
+
+    const number = Number(String(value ?? '').trim().replace(/\s/g, ''));
     if (!Number.isInteger(number) || number < 0) return 0;
     return number;
 }
@@ -109,6 +116,10 @@ async function loadProducts() {
                 const cell = cells[columnIndex];
                 return cell && cell.v !== null && cell.v !== undefined ? cell.v : fallback;
             };
+            const formattedValue = (columnIndex, fallback = '') => {
+                const cell = cells[columnIndex];
+                return cell && cell.f !== null && cell.f !== undefined ? cell.f : fallback;
+            };
 
             const category = String(value(PRODUCT_COLUMNS.category, 'items')).trim().toLowerCase();
             const subcategory = String(value(PRODUCT_COLUMNS.subcategory, '')).trim();
@@ -117,7 +128,10 @@ async function loadProducts() {
                 id: value(PRODUCT_COLUMNS.id, index),
                 name: String(value(PRODUCT_COLUMNS.name, 'Без названия')),
                 price: Number(value(PRODUCT_COLUMNS.price, 0)) || 0,
-                balance: parseBalance(value(PRODUCT_COLUMNS.balance, 0)),
+                balance: parseBalance(
+                    value(PRODUCT_COLUMNS.balance, 0),
+                    formattedValue(PRODUCT_COLUMNS.balance, '')
+                ),
                 category,
                 subcategory,
                 subcategoryKey: subcategory.toLowerCase(),
