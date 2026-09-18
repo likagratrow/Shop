@@ -1,0 +1,168 @@
+const SHEET_NAME = 'Прайс';
+
+
+function doGet() {
+  const sheet = SpreadsheetApp
+    .getActiveSpreadsheet()
+    .getSheetByName(SHEET_NAME);
+
+  if (!sheet) {
+    return ContentService
+      .createTextOutput('ERROR: sheet "Прайс" not found');
+  }
+
+  return ContentService
+    .createTextOutput('OK — Apps Script работает. Лист "Прайс" найден.');
+}
+
+
+function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents);
+
+    if (data.action === 'check_and_decrement') {
+      return checkAndDecrement(data.items);
+    }
+
+    return jsonResponse({
+      ok: false,
+      error: 'Unknown action'
+    });
+
+  } catch (error) {
+    return jsonResponse({
+      ok: false,
+      error: error.toString()
+    });
+  }
+}
+
+
+function checkAndDecrement(items) {
+  const lock = LockService.getScriptLock();
+
+  lock.waitLock(30000);
+
+  try {
+    const sheet = SpreadsheetApp
+      .getActiveSpreadsheet()
+      .getSheetByName(SHEET_NAME);
+
+    if (!sheet) {
+      return jsonResponse({
+        ok: false,
+        error: 'Sheet not found'
+      });
+    }
+
+    const data = sheet.getDataRange().getValues();
+
+    // A = id
+    // D = balance
+
+    for (const item of items) {
+      const productId = String(item.id);
+      const requested = Number(item.quantity);
+
+      if (!Number.isInteger(requested) || requested < 1) {
+        return jsonResponse({
+          ok: false,
+          error: 'Invalid quantity'
+        });
+      }
+
+      let found = false;
+
+      for (let row = 1; row < data.length; row++) {
+        const id = String(data[row][0]);
+
+        if (id !== productId) {
+          continue;
+        }
+
+        found = true;
+
+        const balanceValue = String(data[row][3]).trim();
+
+        // Диоген и Локер — безлимитные
+        if (
+          balanceValue === '∞' ||
+          balanceValue.toLowerCase() === 'infinity'
+        ) {
+          break;
+        }
+
+        const balance = Number(balanceValue);
+
+        if (!Number.isInteger(balance) || balance < 0) {
+          return jsonResponse({
+            ok: false,
+            error: 'Invalid balance for product ' + productId
+          });
+        }
+
+        if (balance < requested) {
+          return jsonResponse({
+            ok: false,
+            error: 'Not enough stock',
+            product_id: productId,
+            available: balance
+          });
+        }
+
+        break;
+      }
+
+      if (!found) {
+        return jsonResponse({
+          ok: false,
+          error: 'Product not found: ' + productId
+        });
+      }
+    }
+
+    // Все товары проверены.
+    // Теперь уменьшаем остатки.
+    for (const item of items) {
+      const productId = String(item.id);
+      const requested = Number(item.quantity);
+
+      for (let row = 1; row < data.length; row++) {
+        const id = String(data[row][0]);
+
+        if (id !== productId) {
+          continue;
+        }
+
+        const balanceValue = String(data[row][3]).trim();
+
+        if (
+          balanceValue === '∞' ||
+          balanceValue.toLowerCase() === 'infinity'
+        ) {
+          break;
+        }
+
+        const balance = Number(balanceValue);
+
+        sheet.getRange(row + 1, 4).setValue(balance - requested);
+
+        break;
+      }
+    }
+
+    return jsonResponse({
+      ok: true
+    });
+
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+
+function jsonResponse(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
