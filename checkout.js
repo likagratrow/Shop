@@ -903,23 +903,21 @@ function showThankYouPopupV4() {
         catch (error) { console.warn('Не удалось закрыть Mini App:', error); }
     };
 
-    if (tg?.showPopup) {
-        tg.showPopup({
-            title: 'Спасибо за заказ!',
-            message: 'Всё записал и передал мастеру.',
-            buttons: [{id: 'done', type: 'default', text: '🤝'}]
-        }, closeApp);
-        return;
-    }
-
-    showCheckoutV4(`
-        <div class="checkout-title">Спасибо за заказ! 🤝</div>
-        <div class="checkout-summary">Всё записал и передал мастеру.</div>
-        <button type="button" class="order-btn" id="thank-you-close">🤝</button>
-    `);
-    document.getElementById('thank-you-close')?.addEventListener('click', closeApp);
+    const overlay = document.createElement('div');
+    overlay.className = 'thank-you-overlay-v4';
+    overlay.innerHTML = `
+        <div class="thank-you-card-v4">
+            <div class="thank-you-title-v4">Спасибо за заказ!</div>
+            <div class="thank-you-text-v4">Всё записал и передал мастеру.</div>
+            <button type="button" class="thank-you-button-v4" id="thank-you-close" aria-label="Закрыть магазин">🤝</button>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#thank-you-close')?.addEventListener('click', () => {
+        overlay.remove();
+        closeApp();
+    });
 }
-
 function sendCompleteOrderV4() {
     if (!tg?.initData || !postOrderStateV4 || postOrderStateV4.busy) return;
 
