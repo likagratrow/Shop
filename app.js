@@ -42,13 +42,19 @@ function formatPrice(value) {
     return new Intl.NumberFormat('ru-RU').format(Number(value) || 0);
 }
 
+function isUnlimitedBalanceValue(value) {
+    if (value === Infinity) return true;
+    const text = String(value ?? '').trim().normalize('NFKC').toLowerCase();
+    return /[∞♾]/u.test(text) || text === 'infinity' || text === 'inf';
+}
+
 function parseBalance(value, formattedValue = '') {
     const candidates = [value, formattedValue];
 
     for (const candidate of candidates) {
         const text = String(candidate ?? '').trim().normalize('NFKC').toLowerCase();
         if (!text) continue;
-        if (/[∞♾]/u.test(text) || text === 'infinity' || text === 'inf') return Infinity;
+        if (isUnlimitedBalanceValue(text)) return Infinity;
     }
 
     const number = Number(String(value ?? '').trim().replace(/\s/g, ''));
@@ -58,8 +64,8 @@ function parseBalance(value, formattedValue = '') {
 
 function getStockText(product) {
     if (!product || product.category !== 'items') return '';
-    if (product.balance <= 0) return 'Нет в наличии';
-    if (product.balance === Infinity) return 'В наличии';
+    if (isUnlimitedBalanceValue(product.balance)) return 'В наличии';
+    if (Number(product.balance) <= 0) return 'Нет в наличии';
     return `В наличии: ${product.balance} шт.`;
 }
 
@@ -166,7 +172,7 @@ function setCartQuantity(id, quantity) {
 
     quantity = Math.max(0, Number(quantity) || 0);
     if (product.category !== 'items') quantity = quantity > 0 ? 1 : 0;
-    if (product.category === 'items' && product.balance !== Infinity) quantity = Math.min(quantity, product.balance);
+    if (product.category === 'items' && !isUnlimitedBalanceValue(product.balance)) quantity = Math.min(quantity, product.balance);
 
     const index = cart.findIndex(item => String(item.id) === String(id));
 
@@ -188,7 +194,7 @@ function addToCart(id) {
     if (product.category === 'items' && product.balance <= 0) return;
 
     const current = getCartQuantity(id);
-    if (product.category === 'items' && product.balance !== Infinity && current >= product.balance) return;
+    if (product.category === 'items' && !isUnlimitedBalanceValue(product.balance) && current >= product.balance) return;
 
     setCartQuantity(id, product.category === 'items' ? current + 1 : 1);
     animateCart();
@@ -227,7 +233,7 @@ function getCardButtonHtml(product) {
         return `<button type="button" class="card-cart-btn" onclick="event.stopPropagation(); addToCart(${JSON.stringify(product.id)});">В корзину</button>`;
     }
 
-    const plusDisabled = product.balance !== Infinity && quantity >= product.balance;
+    const plusDisabled = !isUnlimitedBalanceValue(product.balance) && quantity >= product.balance;
 
     return `<div class="card-quantity" onclick="event.stopPropagation();"><button type="button" class="card-quantity-btn" onclick="event.stopPropagation(); setCartQuantity(${JSON.stringify(product.id)}, ${quantity - 1});" aria-label="Уменьшить количество">−</button><span class="card-quantity-value">${quantity}</span><button type="button" class="card-quantity-btn" ${plusDisabled ? 'disabled' : ''} onclick="event.stopPropagation(); addToCart(${JSON.stringify(product.id)});" aria-label="Увеличить количество">+</button></div>`;
 }
@@ -288,7 +294,7 @@ function render() {
         const stockText = product.category === 'items' ? getStockText(product) : '';
         const stockHtml = stockText ? `<p class="product-card-stock">${escapeHtml(stockText)}</p>` : '';
 
-        return `<div class="product-card" data-product-id="${escapeHtml(String(product.id))}" onclick="openProductModal(${JSON.stringify(product.id)})">${imagesHtml}<h4>${escapeHtml(product.name)}</h4><p class="product-card-price"><b>${formatPrice(product.price)} ₽</b></p>${stockHtml}<div class="card-button-area">${getCardButtonHtml(product)}</div></div>`;
+        return `<div class="product-card" data-product-id="${escapeHtml(String(product.id))}" data-product-category="${escapeHtml(product.category)}" data-product-balance="${escapeHtml(String(product.balance))}" onclick="openProductModal(${JSON.stringify(product.id)})">${imagesHtml}<h4>${escapeHtml(product.name)}</h4><p class="product-card-price"><b>${formatPrice(product.price)} ₽</b></p>${stockHtml}<div class="card-button-area">${getCardButtonHtml(product)}</div></div>`;
     }).join('');
 }
 
@@ -431,7 +437,7 @@ function changeProductQuantity(id, delta) {
 
     const current = getCartQuantity(id);
     let quantity = current === 0 ? Math.max(0, delta) : current + delta;
-    if (product.balance !== Infinity) quantity = Math.min(quantity, product.balance);
+    if (!isUnlimitedBalanceValue(product.balance)) quantity = Math.min(quantity, product.balance);
     setCartQuantity(id, quantity);
 
     const quantityEl = document.getElementById('product-quantity-value');
