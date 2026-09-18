@@ -291,11 +291,17 @@ function productsTotalV4() {
     return cart.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.count || 0), 0);
 }
 
+function setMainCartOrderButtonHiddenV4(hidden) {
+    const button = document.getElementById('cart-order-btn');
+    if (button) button.hidden = hidden;
+}
+
 function showCheckoutV4(content) {
     const block = document.getElementById('cart-checkout');
     if (!block) return;
     block.hidden = false;
     block.innerHTML = content;
+    setMainCartOrderButtonHiddenV4(true);
 }
 
 function hideCheckoutV4() {
@@ -304,6 +310,7 @@ function hideCheckoutV4() {
         block.hidden = true;
         block.innerHTML = '';
     }
+    setMainCartOrderButtonHiddenV4(false);
     checkoutStateV4 = null;
 }
 
@@ -368,6 +375,7 @@ async function renderDeliveryStepV4() {
                 <button type="button" class="order-btn" id="checkout-submit">Оформить заказ</button>
                 <button type="button" class="close-btn checkout-back" id="checkout-back">Назад</button>
             </div>
+            <div id="checkout-error" class="checkout-error"></div>
         `);
         bindCheckoutSubmitV4();
         return;
@@ -461,6 +469,7 @@ function renderAbroadCountryV4() {
             <button type="button" class="order-btn" id="checkout-submit" disabled>Оформить заказ</button>
             <button type="button" class="close-btn checkout-back" id="checkout-back">Назад</button>
         </div>
+        <div id="checkout-error" class="checkout-error"></div>
     `);
 
     const search = document.getElementById('country-search');
