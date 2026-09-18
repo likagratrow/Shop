@@ -333,8 +333,10 @@ function getOrderForBot(data) {
   const serviceOrder = serviceCount === products.length;
   const mixedOrder = managedCount > 0 && managedCount < products.length;
 
-  const deliveryPriceText = String(orderRow[15] || '').trim();
-  const deliveryPrice = deliveryPriceText === '' ? null : normalizeMoney(orderRow[15]);
+  const deliveryPriceValue = orderRow[15];
+  const deliveryPrice = deliveryPriceValue === '' || deliveryPriceValue === null || deliveryPriceValue === undefined
+    ? null
+    : normalizeMoney(deliveryPriceValue);
   const payableGoodsTotal = Math.max(0, productTotal - managedTotal);
   const payableTotal = managedOrder
     ? 0
