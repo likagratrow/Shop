@@ -565,7 +565,6 @@ async function postOrderV4() {
         initData: tg.initData,
         items: cart.map(item => `${item.name} (x${item.count})`).join(', '),
         products: cart.map(item => ({
-            id: item.id,
             name: item.name,
             quantity: item.count,
             category: item.category,
