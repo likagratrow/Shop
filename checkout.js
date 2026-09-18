@@ -195,6 +195,14 @@ checkoutStyleV4.textContent = `
         border: 1px solid color-mix(in srgb, var(--tg-theme-button-color, #2481cc) 18%, #bbb);
         border-radius: 12px;
         background: color-mix(in srgb, var(--tg-theme-button-color, #2481cc) 5%, var(--tg-theme-bg-color, #fff));
+        color: #fff;
+    }
+    .payment-title,
+    .payment-info .payment-row,
+    .payment-info .payment-row-label,
+    .payment-info .payment-phone,
+    .payment-info .payment-note-content {
+        color: #fff !important;
     }
     .payment-title { font-weight: 700; margin-bottom: 7px; }
     .payment-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
@@ -206,12 +214,19 @@ checkoutStyleV4.textContent = `
     }
     .copy-payment-phone {
         flex: none !important;
-        width: auto !important;
-        min-width: 132px;
+        width: 38px !important;
+        min-width: 38px !important;
+        height: 38px;
         margin: 0 !important;
-        padding: 8px 10px !important;
-        font-size: 13px !important;
+        padding: 7px !important;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--tg-theme-button-color, #2481cc) !important;
+        color: var(--tg-theme-button-text-color, #fff) !important;
+        border-radius: 9px !important;
     }
+    .copy-payment-phone svg { width: 21px; height: 21px; display: block; }
     .payment-note {
         margin-top: 10px;
         border-top: 1px solid color-mix(in srgb, var(--tg-theme-button-color, #2481cc) 12%, transparent);
@@ -219,7 +234,7 @@ checkoutStyleV4.textContent = `
     }
     .payment-note summary {
         cursor: pointer;
-        color: var(--tg-theme-hint-color, #777);
+        color: #fff !important;
         font-size: 13px;
         user-select: none;
     }
@@ -227,8 +242,47 @@ checkoutStyleV4.textContent = `
         margin-top: 8px;
         font-size: 13px;
         line-height: 1.45;
-        color: var(--tg-theme-text-color, #000);
+        color: #fff !important;
     }
+    .thank-you-overlay-v4 {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        box-sizing: border-box;
+        background: color-mix(in srgb, var(--tg-theme-bg-color, #fff) 78%, #000);
+    }
+    .thank-you-card-v4 {
+        width: min(320px, 88vw);
+        padding: 24px 20px;
+        box-sizing: border-box;
+        border-radius: 18px;
+        text-align: center;
+        background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+        color: var(--tg-theme-text-color, #000);
+        box-shadow: 0 12px 40px rgba(0,0,0,.22);
+    }
+    .thank-you-title-v4 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    .thank-you-text-v4 { font-size: 14px; line-height: 1.45; margin-bottom: 18px; }
+    .thank-you-button-v4 {
+        width: 72px;
+        height: 72px;
+        padding: 0;
+        border: none;
+        border-radius: 16px;
+        background: var(--tg-theme-button-color, #2481cc);
+        color: var(--tg-theme-button-text-color, #fff);
+        font-size: 38px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 14px color-mix(in srgb, var(--tg-theme-button-color, #2481cc) 35%, transparent);
+        cursor: pointer;
+    }
+    .thank-you-button-v4:active { transform: scale(.96); }
     .checkout-country-list {
         max-height: 260px;
         overflow-y: auto;
