@@ -178,10 +178,16 @@ async function loadCategoryDescriptions() {
 const onlyInStockEl = document.getElementById('only-in-stock');
 const ONLY_IN_STOCK_STORAGE_KEY = 'shopOnlyInStock';
 
+function isUnlimitedBalanceV5(value) {
+    if (value === Infinity) return true;
+    const text = String(value ?? '').trim().normalize('NFKC').toLowerCase();
+    return text === '∞' || text === '♾' || text === 'infinity' || text === 'inf';
+}
+
 function isProductInStock(product) {
     if (!product) return false;
     if (product.category === 'repeat' || product.category === 'service') return true;
-    return product.balance === Infinity || product.balance > 0;
+    return isUnlimitedBalanceV5(product.balance) || (Number.isFinite(Number(product.balance)) && Number(product.balance) > 0);
 }
 
 function applyAvailabilityFilter() {
