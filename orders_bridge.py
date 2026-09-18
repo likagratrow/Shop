@@ -186,21 +186,3 @@ def _order_id_from_callback_data(data, action):
         return ""
 
     return order_id
-
-def _latest_order_id_from_callback_message(call):
-    text = str(call.message.text or "")
-    marker = "Ваш заказ №"
-
-    if marker not in text:
-        return ""
-
-    tail = text.split(marker, 1)[1]
-    digits = ""
-
-    for char in tail:
-        if char.isdigit():
-            digits += char
-        else:
-            break
-
-    return digits
