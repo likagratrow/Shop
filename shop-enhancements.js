@@ -178,16 +178,17 @@ async function loadCategoryDescriptions() {
 const onlyInStockEl = document.getElementById('only-in-stock');
 const ONLY_IN_STOCK_STORAGE_KEY = 'shopOnlyInStock';
 
-function isUnlimitedBalanceV5(value) {
-    if (value === Infinity) return true;
-    const text = String(value ?? '').trim().normalize('NFKC').toLowerCase();
-    return text === '∞' || text === '♾' || text === 'infinity' || text === 'inf';
-}
+function isProductInStock(product, card) {
+    if (!product) {
+        const cardCategory = String(card?.dataset.productCategory || '').trim().toLowerCase();
+        if (cardCategory === 'repeat' || cardCategory === 'service') return true;
+        const balanceText = String(card?.dataset.productBalance || '').trim();
+        return isUnlimitedBalanceValue(balanceText) || (Number.isFinite(Number(balanceText)) && Number(balanceText) > 0);
+    }
 
-function isProductInStock(product) {
-    if (!product) return false;
-    if (product.category === 'repeat' || product.category === 'service') return true;
-    return isUnlimitedBalanceV5(product.balance) || (Number.isFinite(Number(product.balance)) && Number(product.balance) > 0);
+    const category = String(product.category || '').trim().toLowerCase();
+    if (category === 'repeat' || category === 'service') return true;
+    return isUnlimitedBalanceValue(product.balance) || (Number.isFinite(Number(product.balance)) && Number(product.balance) > 0);
 }
 
 function applyAvailabilityFilter() {
@@ -201,7 +202,7 @@ function applyAvailabilityFilter() {
     cards.forEach(card => {
         const productId = card.getAttribute('data-product-id');
         const product = products.find(item => String(item.id) === String(productId));
-        const hidden = onlyInStock && product && !isProductInStock(product);
+        const hidden = onlyInStock && !isProductInStock(product, card);
         card.style.display = hidden ? 'none' : '';
         if (!hidden) visibleCount += 1;
     });
