@@ -179,6 +179,8 @@ const onlyInStockEl = document.getElementById('only-in-stock');
 const ONLY_IN_STOCK_STORAGE_KEY = 'shopOnlyInStock';
 
 function isProductInStock(product) {
+    if (!product) return false;
+    if (product.category === 'repeat' || product.category === 'service') return true;
     return product.balance === Infinity || product.balance > 0;
 }
 
