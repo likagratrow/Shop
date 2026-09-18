@@ -39,7 +39,7 @@ function doPost(e) {
     const action = String(data.action || '');
 
     if (action === 'create-order') return jsonResponse(createOrder(data));
-    if (action === 'receive-contact') return jsonResponse(receiveContact(data));
+    if (action === 'attach-order-phone') return jsonResponse(attachOrderPhone(data));
     if (action === 'get-order') return jsonResponse(getOrderForBot(data));
 
     throw new Error('Неизвестное действие: ' + action);
@@ -194,10 +194,12 @@ function createOrder(data) {
     console.error('Не удалось отправить финал клиенту:', error);
   }
 
-  try {
-    sendOwnerNotificationForOrder(orderId, telegramId);
-  } catch (error) {
-    console.error('Не удалось отправить уведомление владельцу:', error);
+  if (orderMeta.contactMethod === 'telegram') {
+    try {
+      sendOwnerNotificationForOrder(orderId, telegramId);
+    } catch (error) {
+      console.error('Не удалось отправить уведомление владельцу:', error);
+    }
   }
 
   if (orderMeta.postOrderAction === 'paid' && !orderMeta.managedOrder) {
@@ -387,7 +389,7 @@ function sendStockFailureNotification(telegramId, orderId, itemsText, errorText)
   });
 }
 
-function receiveContact(data) {
+function attachOrderPhone(data) {
   const botToken = getBotToken();
   const apiToken = String(data.api_token || '');
   if (!apiToken || !constantTimeEqual(apiToken, botToken)) throw new Error('Недействительный API-токен.');
@@ -426,12 +428,9 @@ function receiveContact(data) {
   if (!orderId) return {ok: true, attached: false};
 
   try {
-    telegramApi(getBotToken(), 'sendMessage', {
-      chat_id: getOwnerTelegramId(),
-      text: '📱 К заказу №' + orderId + ' добавлен телефон: ' + phone
-    });
+    sendOwnerNotificationForOrder(orderId, telegramId);
   } catch (error) {
-    console.error('Не удалось отправить обновление с телефоном:', error);
+    console.error('Не удалось отправить уведомление с телефоном:', error);
   }
 
   return {ok: true, attached: true, orderId: orderId};
