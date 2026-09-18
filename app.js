@@ -20,7 +20,6 @@ const PRODUCT_COLUMNS = Object.freeze({
 });
 
 const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
-const STOCK_API_URL = 'https://script.google.com/macros/s/AKfycbwwQkE9C1U82T0LoYv9umYrc-pmeD0KSZPZ0IOWAtEvWrKGagUNPJeoUvtIyviQF4-vfoTg/exec';
 const ORDERS_API_URL = 'https://script.google.com/macros/s/AKfycbz2XQn7s0e_irZ2rRsvcXb_I7hKp_DxNXTYsZlIt2TATE58IiqJ9AyjUKj9f09-CII9/exec';
 const tg = window.Telegram?.WebApp;
 
