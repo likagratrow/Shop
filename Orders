@@ -2,16 +2,14 @@
  * Странные Вещи — Orders Google Apps Script
  * Shop Mini App -> Orders -> Telegram bot.
  *
- * Технический ID товара живёт только во временном Script Property
- * и не попадает в исторический лист "Состав".
+ * Лист "Заказы" и лист "Состав" — единственный источник данных о заказе
+ * после его создания.
  */
 
 const SHEET_ID = '1FcetqNVvXNI78h0mcQdEJBEVXzkHcgaddFrCn2VOugk';
 const ORDERS_SHEET_NAME = 'Заказы';
 const COMPOSITION_SHEET_NAME = 'Состав';
 const BOT_TOKEN_PROPERTY = 'BOT_TOKEN';
-const ORDER_PAYLOAD_PREFIX = 'ORDER_PAYLOAD_';
-const ORDER_PAYLOAD_TTL_MS = 24 * 60 * 60 * 1000;
 const MANAGED_CATEGORIES = ['repeat', 'service'];
 
 const ORDERS_HEADERS = [
@@ -71,8 +69,6 @@ function createOrder(data) {
   lock.waitLock(30000);
 
   try {
-    cleanupExpiredOrderPayloads();
-
     const ss = SpreadsheetApp.openById(SHEET_ID);
     const ordersSheet = getRequiredSheet(ss, ORDERS_SHEET_NAME, ORDERS_HEADERS);
     const compositionSheet = getRequiredSheet(ss, COMPOSITION_SHEET_NAME, COMPOSITION_HEADERS);
@@ -146,7 +142,6 @@ function createOrder(data) {
       delivery: delivery
     };
 
-    storeOrderPayload(orderId, telegramId, runtimeProducts, orderMeta);
     sendOrderMessage(telegramId, orderId, itemsText, orderMeta);
 
     return {
@@ -409,77 +404,6 @@ function findOrderRow(sheet, orderId) {
   return null;
 }
 
-function storeOrderPayload(orderId, telegramId, products, meta) {
-  const payload = {
-    created_at: Date.now(),
-    telegram_id: String(telegramId),
-    product_total: Number(meta.productTotal || 0),
-    payable_goods_total: Number(meta.payableGoodsTotal || 0),
-    payable_total: Number(meta.payableTotal || 0),
-    managed_product_total: Number(meta.managedTotal || 0),
-    total: Number(meta.total || 0),
-    needs_delivery: Boolean(meta.needsDelivery),
-    managed_order: Boolean(meta.managedOrder),
-    repeat_order: Boolean(meta.repeatOrder),
-    service_order: Boolean(meta.serviceOrder),
-    mixed_order: Boolean(meta.mixedOrder),
-    delivery: meta.delivery || {},
-    products: products.map(function(product) {
-      return {
-        id: String(product.id ?? '').trim(),
-        name: String(product.name || '').trim() || String(product.title || '').trim() || 'Без названия',
-        category: String(product.category || '').trim().toLowerCase(),
-        quantity: normalizeQuantity(product.quantity),
-        price: normalizeMoney(product.price)
-      };
-    })
-  };
-
-  PropertiesService.getScriptProperties().setProperty(
-    ORDER_PAYLOAD_PREFIX + orderId,
-    JSON.stringify(payload)
-  );
-}
-
-function loadOrderPayload(orderId) {
-  const key = ORDER_PAYLOAD_PREFIX + orderId;
-  const raw = PropertiesService.getScriptProperties().getProperty(key);
-  if (!raw) return null;
-
-  try {
-    const payload = JSON.parse(raw);
-    if (!payload || !Array.isArray(payload.products)) return null;
-
-    if (Date.now() - Number(payload.created_at || 0) > ORDER_PAYLOAD_TTL_MS) {
-      PropertiesService.getScriptProperties().deleteProperty(key);
-      return null;
-    }
-
-    return payload;
-  } catch (error) {
-    PropertiesService.getScriptProperties().deleteProperty(key);
-    return null;
-  }
-}
-
-function cleanupExpiredOrderPayloads() {
-  const properties = PropertiesService.getScriptProperties().getProperties();
-  const now = Date.now();
-
-  Object.keys(properties).forEach(function(key) {
-    if (key.indexOf(ORDER_PAYLOAD_PREFIX) !== 0) return;
-
-    try {
-      const payload = JSON.parse(properties[key]);
-      const createdAt = Number(payload && payload.created_at || 0);
-      if (!createdAt || now - createdAt > ORDER_PAYLOAD_TTL_MS) {
-        PropertiesService.getScriptProperties().deleteProperty(key);
-      }
-    } catch (error) {
-      PropertiesService.getScriptProperties().deleteProperty(key);
-    }
-  });
-}
 
 function telegramApi(botToken, method, payload) {
   const url = 'https://api.telegram.org/bot' + botToken + '/' + method;
