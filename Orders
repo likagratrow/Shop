@@ -343,7 +343,7 @@ function buildOwnerNotificationText(orderId, orderRow, products) {
   let text = '🛍 НОВЫЙ ЗАКАЗ\n\n';
   if (managedOrder || mixedOrder) text += '⚒️ НА ЗАКАЗ / СЕРВИС\n\n';
   text += buildItemsTextFromProducts(products) + '\n\n';
-  text += '💰 К оплате сейчас: ' + formatMoney(managedOrder ? 0 : Math.max(0, productTotal - managedTotal) + (deliveryPrice == null ? 0 : deliveryPrice)) + ' ₽\n';
+  text += '💰 К оплате сейчас: ' + formatMoney(managedOrder ? 0 : calculatePayableNowTotal(products) + (deliveryPrice == null ? 0 : deliveryPrice)) + ' ₽\n';
   if (managedTotal) text += '⚒️ На заказ / сервис: ' + formatMoney(managedTotal) + ' ₽\n';
   if (String(orderRow[5] || '').trim()) text += '🚚 Доставка: ' + String(orderRow[5]).trim() + '\n';
   if (deliveryPrice == null && String(orderRow[9] || '').trim()) text += '💰 Итого: ' + formatMoney(Number(orderRow[6] || 0)) + ' ₽ + доставка по согласованию\n';
@@ -555,7 +555,7 @@ function getOrderForBot(data) {
   const deliveryPrice = deliveryPriceValue === '' || deliveryPriceValue === null || deliveryPriceValue === undefined
     ? null
     : normalizeMoney(deliveryPriceValue);
-  const payableGoodsTotal = Math.max(0, productTotal - managedTotal);
+  const payableGoodsTotal = calculatePayableNowTotal(products);
   const payableTotal = managedOrder
     ? 0
     : payableGoodsTotal + (deliveryPrice == null ? 0 : deliveryPrice);
