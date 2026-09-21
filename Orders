@@ -342,7 +342,7 @@ function buildOwnerNotificationText(orderId, orderRow, products) {
   const deliveryPriceValue = orderRow[15];
   const deliveryPrice = deliveryPriceValue === '' || deliveryPriceValue === null || deliveryPriceValue === undefined ? null : normalizeMoney(deliveryPriceValue);
 
-  let text = '🛍 НОВЫЙ ЗАКАЗ\n\n';
+  let text = '🛍 НОВЫЙ ЗАКАЗ №' + orderId + '\n\n';
   if (managedOrder || mixedOrder) text += '⚒️ НА ЗАКАЗ / СЕРВИС\n\n';
   text += buildItemsTextFromProducts(products) + '\n\n';
   text += '💰 К оплате сейчас: ' + formatMoney(managedOrder ? 0 : calculatePayableNowTotal(products) + (deliveryPrice == null ? 0 : deliveryPrice)) + ' ₽\n';
