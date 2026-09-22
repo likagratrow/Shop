@@ -117,7 +117,7 @@ function shopTelegramUser() {
 
 function shopAccessList(value) {
     return String(value ?? '')
-        .split(/[,;\\n]/)
+        .split(/[,;\n]/)
         .map(item => item.trim())
         .filter(Boolean);
 }
