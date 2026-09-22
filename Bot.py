@@ -112,10 +112,14 @@ _MENU_CALLBACKS = {
 }
 
 
-@bot.callback_query_handler(func=lambda call: call.data in _MENU_CALLBACKS)
+@bot.callback_query_handler(func=lambda call: True)
 def menu_callback(call):
+    handler = _MENU_CALLBACKS.get(getattr(call, 'data', None))
+    if handler is None:
+        return
+
     bot.answer_callback_query(call.id)
-    _MENU_CALLBACKS[call.data](bot, call.message.chat.id, orders_db)
+    handler(bot, call.message.chat.id, orders_db)
 
 
 def _attach_phone_to_latest_order(telegram_id, phone, attempts=4):
@@ -174,4 +178,4 @@ import commands
 
 
 print('Бот запущен')
-bot.infinity_polling()
+bot.infinity_polling(allowed_updates=['message', 'callback_query'])
