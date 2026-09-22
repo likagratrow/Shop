@@ -21,9 +21,16 @@ const PRODUCT_COLUMNS = Object.freeze({
 
 const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent('Прайс')}`;
 const ORDERS_API_URL = 'https://script.google.com/macros/s/AKfycbz2XQn7s0e_irZ2rRsvcXb_I7hKp_DxNXTYsZlIt2TATE58IiqJ9AyjUKj9f09-CII9/exec';
+const ACCESS_API_URL = 'https://script.google.com/macros/s/AKfycbzs21P908JOT1KBK3c-iH8m7ofkIvsBwMF9pSDWCaj14Y05z7Q-ukkJ1h3OBkNB-t0p/exec';
 const tg = window.Telegram?.WebApp;
 
-if (tg) tg.expand();
+if (tg) {
+    tg.ready();
+    tg.expand();
+}
+
+let accessLevelIds = new Set();
+let accessFull = false;
 
 let products = [];
 let cart = [];
@@ -102,6 +109,85 @@ function showLoadError(error) {
     container.innerHTML = `<div class="load-error"><h3>Не удалось загрузить товары</h3><p>${escapeHtml(message)}</p><button type="button" onclick="loadProducts()">Повторить</button></div>`;
 }
 
+function shopTelegramUser() {
+    return window.Telegram?.WebApp?.initDataUnsafe?.user
+        || tg?.initDataUnsafe?.user
+        || null;
+}
+
+function shopAccessList(value) {
+    return String(value ?? '')
+        .split(/[,;\\n]/)
+        .map(item => item.trim())
+        .filter(Boolean);
+}
+
+async function loadShopAccess() {
+    const currentUser = shopTelegramUser();
+
+    if (!currentUser?.id) {
+        accessLevelIds = new Set();
+        accessFull = false;
+        return;
+    }
+
+    try {
+        const params = new URLSearchParams({
+            action: 'user',
+            telegram_id: String(currentUser.id),
+            username: String(currentUser.username || '')
+        });
+
+        const response = await fetch(
+            `${ACCESS_API_URL}?${params.toString()}`,
+            {
+                method: 'GET',
+                cache: 'no-store',
+                redirect: 'follow'
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error(`Access API вернул HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (!data.ok) {
+            throw new Error(data.error || 'Не удалось получить доступ пользователя.');
+        }
+
+        accessLevelIds = new Set(
+            Array.isArray(data.allowedLevelIds)
+                ? data.allowedLevelIds.map(item => String(item).trim()).filter(Boolean)
+                : []
+        );
+
+        accessFull = Boolean(data.fullAccess);
+    } catch (error) {
+        console.warn('Не удалось получить доступ пользователя. Используется базовый доступ:', error);
+        accessLevelIds = new Set();
+        accessFull = false;
+    }
+}
+
+function shopProductHasAccess(product) {
+    const requiredLevels = shopAccessList(product.access);
+
+    // Пустая P = базовый контент, доступный всем.
+    if (!requiredLevels.length) {
+        return true;
+    }
+
+    // Полный доступ видит всё.
+    if (accessFull) {
+        return true;
+    }
+
+    // Достаточно совпадения хотя бы с одним указанным Level ID.
+    return requiredLevels.some(levelId => accessLevelIds.has(levelId));
+}
+
 async function loadProducts() {
     const container = document.getElementById('products');
     if (container) container.innerHTML = '<div class="loading">Загрузка товаров...</div>';
@@ -144,9 +230,10 @@ async function loadProducts() {
                 image: String(value(PRODUCT_COLUMNS.photo1, '')).trim(),
                 image2: String(value(PRODUCT_COLUMNS.photo2, '')).trim(),
                 image3: String(value(PRODUCT_COLUMNS.photo3, '')).trim(),
-                image4: String(value(PRODUCT_COLUMNS.photo4, '')).trim()
+                image4: String(value(PRODUCT_COLUMNS.photo4, '')).trim(),
+                access: String(value(15, '')).trim()
             };
-        });
+        }).filter(shopProductHasAccess);
 
         console.log('Товары загружены:', products);
         render();
@@ -468,5 +555,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('keydown', event => {
         if (event.key === 'Escape') closeImageLightbox();
     });
-    loadProducts();
+    loadShopAccess()
+        .then(() => loadProducts())
+        .catch(error => {
+            console.error('Ошибка инициализации доступа магазина:', error);
+            loadProducts();
+        });
 });
