@@ -106,16 +106,16 @@ def start(message):
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data == 'menu_individual')
-def individual_order_callback(call):
-    bot.answer_callback_query(call.id)
-    individual_order.start(bot, call.message.chat.id, orders_db)
+_MENU_CALLBACKS = {
+    'menu_individual': individual_order.start,
+    'menu_feedback': reviews.start,
+}
 
 
-@bot.callback_query_handler(func=lambda call: call.data == 'menu_feedback')
-def feedback_callback(call):
+@bot.callback_query_handler(func=lambda call: call.data in _MENU_CALLBACKS)
+def menu_callback(call):
     bot.answer_callback_query(call.id)
-    reviews.start(bot, call.message.chat.id, orders_db)
+    _MENU_CALLBACKS[call.data](bot, call.message.chat.id, orders_db)
 
 
 def _attach_phone_to_latest_order(telegram_id, phone, attempts=4):
