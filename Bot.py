@@ -37,7 +37,6 @@ individual_order._shop_keyboard = shop_keyboard
 reviews._shop_keyboard = shop_keyboard
 
 
-
 def _start_parameter(message):
     text = str(getattr(message, 'text', '') or '').strip()
     parts = text.split(maxsplit=1)
@@ -101,6 +100,9 @@ def start(message):
     )
     bot.send_message(
         message.chat.id,
+        '⚠️ К сожалению, бот может зависать по независящим от него внешним техническим причинам. '
+        'Нужно просто немного подождать. Пожалуйста, не нажимайте кнопки повторно. '
+        'Спасибо за понимание. 🌿\n\n'
         'Выберите, что хотите сделать.',
         reply_markup=shop_keyboard()
     )
