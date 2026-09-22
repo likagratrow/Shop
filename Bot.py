@@ -13,6 +13,7 @@ YOUR_TELEGRAM_ID = 5219493908
 WEB_APP_URL = 'https://likagratrow.github.io/Shop/'
 ORDERS_API_URL = 'https://script.google.com/macros/s/AKfycbz2XQn7s0e_irZ2rRsvcXb_I7hKp_DxNXTYsZlIt2TATE58IiqJ9AyjUKj9f09-CII9/exec'
 NEWS_URL = 'https://t.me/strannstuff'
+ACCESS_INVITE_API_URL = 'https://script.google.com/macros/s/AKfycbzs21P908JOT1KBK3c-iH8m7ofkIvsBwMF9pSDWCaj14Y05z7Q-ukkJ1h3OBkNB-t0p/exec'
 
 bot = telebot.TeleBot(BOT_TOKEN)
 orders_db = {}
@@ -37,8 +38,62 @@ reviews._shop_keyboard = shop_keyboard
 
 
 
+def _start_parameter(message):
+    text = str(getattr(message, 'text', '') or '').strip()
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        return ''
+    return parts[1].strip()
+
+
+def _redeem_access_invite(message, token):
+    if not token:
+        return True, ''
+
+    payload = json.dumps({
+        'action': 'redeem-invite',
+        'token': str(token),
+        'telegram_id': str(message.from_user.id),
+        'username': str(message.from_user.username or '')
+    }, ensure_ascii=False).encode('utf-8')
+
+    request = urllib.request.Request(
+        ACCESS_INVITE_API_URL,
+        data=payload,
+        headers={
+            'Content-Type': 'text/plain;charset=utf-8',
+            'User-Agent': 'Mozilla/5.0'
+        },
+        method='POST'
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            result = json.loads(response.read().decode('utf-8'))
+
+        if not result.get('ok'):
+            return False, str(result.get('error') or 'Не удалось активировать приглашение.')
+
+        return True, ''
+
+    except Exception as error:
+        print('Ошибка активации приглашения:', repr(error))
+        return False, 'Не удалось активировать приглашение. Попробуйте ещё раз позже.'
+
+
 @bot.message_handler(commands=['start'])
 def start(message):
+    token = _start_parameter(message)
+
+    if token:
+        ok, error = _redeem_access_invite(message, token)
+        if not ok:
+            bot.send_message(
+                message.chat.id,
+                'Не удалось активировать приглашение.\n\n' + error
+            )
+            return
+
     bot.send_message(
         message.chat.id,
         'Добро пожаловать в Странные Вещи.',
