@@ -89,11 +89,53 @@ function parseGvizResponse(text) {
     }
 }
 
-function getImageUrl(image) {
+function getImageUrl(image, width = 1400) {
     const value = String(image || '').trim();
     if (!value || value.toLowerCase() === 'image') return 'images/placeholder.jpg';
+
+    if (/^https?:\/\/drive\.google\.com\/file\/d\/[^/]+/i.test(value)) {
+        const match = value.match(/\/file\/d\/([^/]+)/i);
+        if (match && match[1]) {
+            return 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(match[1]) + '&sz=w' + width;
+        }
+    }
+
+    if (/^https?:\/\/drive\.google\.com\/uc\?/i.test(value)) {
+        const match = value.match(/[?&]id=([^&]+)/i);
+        if (match && match[1]) {
+            return 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(match[1]) + '&sz=w' + width;
+        }
+    }
+
+    if (/^https?:\/\/lh3\.googleusercontent\.com\/d\//i.test(value)) {
+        return value.replace(/=w\\d+(?:-[^/]*)?$/i, '=w' + width);
+    }
+
     if (/^(https?:)?\/\//i.test(value) || value.startsWith('data:')) return value;
-    return `images/${encodeURIComponent(value)}`;
+    return 'images/' + encodeURIComponent(value);
+}
+
+function getCatalogSheetUrl() {
+    const columns = 'A,B,C,D,E,F,G,H,I,J,K';
+    let where = "P is null or P = ''";
+
+    if (accessFull) {
+        return SHEET_URL + '&tq=' + encodeURIComponent('select ' + columns);
+    }
+
+    const allowed = Array.from(accessLevelIds)
+        .map(value => String(value).trim())
+        .filter(Boolean);
+
+    if (allowed.length) {
+        const escaped = allowed
+            .map(value => value.replace(/\\/g, '\\\\').replace(/'/g, "''"))
+            .join('|');
+
+        where += " or P matches '(^|[,;\\n])(" + escaped + ")([,;\\n]|$)'";
+    }
+
+    return SHEET_URL + '&tq=' + encodeURIComponent('select ' + columns + ' where ' + where);
 }
 
 function getProductImages(product) {
@@ -193,7 +235,7 @@ async function loadProducts() {
     if (container) container.innerHTML = '<div class="loading">Загрузка товаров...</div>';
 
     try {
-        const response = await fetch(SHEET_URL, {method: 'GET', cache: 'no-store'});
+        const response = await fetch(getCatalogSheetUrl(), {method: 'GET', cache: 'no-store'});
         if (!response.ok) throw new Error(`Google Sheets вернул HTTP ${response.status}`);
         const text = await response.text();
         const json = parseGvizResponse(text);
@@ -369,14 +411,8 @@ function render() {
 
     container.innerHTML = filtered.map(product => {
         const images = getProductImages(product);
-        let imagesHtml = '';
-
-        if (images.length > 1) {
-            imagesHtml = `<div class="product-gallery">${images.map(src => `<img src="${escapeHtml(getImageUrl(src))}" class="gallery-img" alt="${escapeHtml(product.name)}" onerror="this.onerror=null;this.src='images/placeholder.jpg';">`).join('')}</div>`;
-        } else {
-            const src = images.length ? getImageUrl(images[0]) : 'images/placeholder.jpg';
-            imagesHtml = `<img src="${escapeHtml(src)}" class="main-img" alt="${escapeHtml(product.name)}" onerror="this.onerror=null;this.src='images/placeholder.jpg';">`;
-        }
+        const src = images.length ? getImageUrl(images[0], 800) : 'images/placeholder.jpg';
+        const imagesHtml = `<img src="${escapeHtml(src)}" loading="lazy" decoding="async" class="main-img" alt="${escapeHtml(product.name)}" onerror="this.onerror=null;this.src='images/placeholder.jpg';">`;
 
         const stockText = product.category === 'items' ? getStockText(product) : '';
         const stockHtml = stockText ? `<p class="product-card-stock">${escapeHtml(stockText)}</p>` : '';
@@ -458,7 +494,7 @@ function openProductModal(id) {
 
     const images = getProductImages(product);
     const imagesHtml = images.length
-        ? `<div class="product-modal-gallery">${images.map((src, index) => `<img src="${escapeHtml(getImageUrl(src))}" alt="${escapeHtml(product.name)}" onclick="openImageLightbox(${JSON.stringify(product.id)}, ${index}); event.stopPropagation();" onerror="this.onerror=null;this.src='images/placeholder.jpg';">`).join('')}</div>`
+        ? `<div class="product-modal-gallery">${images.map((src, index) => `<img src="${escapeHtml(getImageUrl(src, 1400))}" alt="${escapeHtml(product.name)}" onclick="openImageLightbox(${JSON.stringify(product.id)}, ${index}); event.stopPropagation();" onerror="this.onerror=null;this.src='images/placeholder.jpg';">`).join('')}</div>`
         : '';
 
     const currentQuantity = getCartQuantity(product.id);
@@ -493,7 +529,7 @@ function openImageLightbox(productId, startIndex) {
         document.body.appendChild(lightbox);
     }
 
-    lightbox.innerHTML = `<div class="image-lightbox-track">${images.map(src => `<div class="image-lightbox-slide"><img src="${escapeHtml(getImageUrl(src))}" alt="${escapeHtml(product.name)}" onclick="event.stopPropagation();" onerror="this.onerror=null;this.src='images/placeholder.jpg';"></div>`).join('')}</div>`;
+    lightbox.innerHTML = `<div class="image-lightbox-track">${images.map(src => `<div class="image-lightbox-slide"><img src="${escapeHtml(getImageUrl(src, 1400))}" alt="${escapeHtml(product.name)}" onclick="event.stopPropagation();" onerror="this.onerror=null;this.src='images/placeholder.jpg';"></div>`).join('')}</div>`;
     lightbox.onclick = event => {
         if (event.target === lightbox || event.target.classList.contains('image-lightbox-slide')) closeImageLightbox();
     };
