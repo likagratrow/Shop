@@ -305,8 +305,12 @@ function sendCustomerFinalMessage(chatId, orderId, itemsText, meta) {
     text += '\nСпасибо! Всё записал и передал мастеру. Мастер свяжется с вами в рабочее время Пн–Пт, 10:00–18:00 (Екатеринбург), чтобы сообщить о готовности заказа. Спасибо за заказ!';
   }
 
-  telegramApi(botToken, 'sendMessage', {chat_id: chatId, text: text, parse_mode: 'HTML'});
-  sendHubMenu(chatId);
+  telegramApi(botToken, 'sendMessage', {chat_id: chatId, text: text});
+  try {
+    sendHubMenu(chatId);
+  } catch (error) {
+    console.error('Не удалось отправить меню после заказа:', error);
+  }
 }
 
 function sendHubMenu(chatId) {
