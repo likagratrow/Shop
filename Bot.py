@@ -36,6 +36,37 @@ def shop_keyboard():
 individual_order._shop_keyboard = shop_keyboard
 reviews._shop_keyboard = shop_keyboard
 
+def send_owner_message(text):
+    for attempt in range(3):
+        try:
+            bot.send_message(YOUR_TELEGRAM_ID, text)
+            return True
+        except Exception as error:
+            print('Не удалось отправить уведомление владельцу:', repr(error))
+            if attempt + 1 < 3:
+                time.sleep(1)
+    return False
+
+
+def send_owner_media(media_type, file_id):
+    for attempt in range(3):
+        try:
+            if media_type == 'photo':
+                bot.send_photo(YOUR_TELEGRAM_ID, file_id)
+            else:
+                bot.send_document(YOUR_TELEGRAM_ID, file_id)
+            return True
+        except Exception as error:
+            print('Не удалось отправить референс владельцу:', repr(error))
+            if attempt + 1 < 3:
+                time.sleep(1)
+    return False
+
+
+individual_order._owner_notifier = send_owner_message
+individual_order._owner_media_notifier = send_owner_media
+reviews._owner_notifier = send_owner_message
+
 
 def _start_parameter(message):
     text = str(getattr(message, 'text', '') or '').strip()
