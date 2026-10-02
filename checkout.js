@@ -918,39 +918,43 @@ function showThankYouPopupV4() {
         closeApp();
     });
 }
-function sendCompleteOrderV4() {
+async function sendCompleteOrderV4() {
     if (!tg?.initData || !postOrderStateV4 || postOrderStateV4.busy) return;
 
     postOrderStateV4.busy = true;
     const body = JSON.stringify(buildCompleteOrderPayloadV4());
 
-    let handedOff = false;
     try {
-        if (navigator.sendBeacon) {
-            handedOff = navigator.sendBeacon(
-                ORDERS_API_URL,
-                new Blob([body], {type: 'text/plain;charset=UTF-8'})
-            );
-        }
-    } catch (error) {
-        console.warn('Не удалось передать заказ через sendBeacon:', error);
-    }
+        const response = await fetch(ORDERS_API_URL, {
+            method: 'POST',
+            headers: {'Content-Type': 'text/plain;charset=utf-8'},
+            body,
+            cache: 'no-store',
+            redirect: 'follow',
+            keepalive: true
+        });
 
-    if (!handedOff) {
+        let result;
         try {
-            fetch(ORDERS_API_URL, {
-                method: 'POST',
-                headers: {'Content-Type': 'text/plain;charset=utf-8'},
-                body,
-                cache: 'no-store',
-                keepalive: true
-            }).catch(error => console.error('Ошибка фоновой отправки заказа:', error));
+            result = await response.json();
         } catch (error) {
-            console.error('Не удалось запустить фоновую отправку заказа:', error);
+            throw new Error('Сервер вернул некорректный ответ.');
         }
-    }
 
-    showThankYouPopupV4();
+        if (!response.ok || !result?.ok) {
+            throw new Error(String(result?.error || 'Не удалось оформить заказ.'));
+        }
+
+        showThankYouPopupV4();
+    } catch (error) {
+        console.error('Ошибка отправки заказа:', error);
+        postOrderStateV4.busy = false;
+        showCheckoutV4(
+            '<div class="checkout-error">Не удалось подтвердить завершение заказа.<br>' +
+            escapeHtml(error?.message || error) +
+            '<br><br>Заказ мог уже сохраниться. Пожалуйста, не отправляйте его повторно.</div>'
+        );
+    }
 }
 const previousRenderCartV4 = renderCart;
 renderCart = function() {
