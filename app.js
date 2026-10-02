@@ -108,7 +108,7 @@ function getImageUrl(image, width = 1400) {
     }
 
     if (/^https?:\/\/lh3\.googleusercontent\.com\/d\//i.test(value)) {
-        return value.replace(/=w\\d+(?:-[^/]*)?$/i, '=w' + width);
+        return value.replace(/=w\d+(?:-[^/]*)?$/i, '=w' + width);
     }
 
     if (/^(https?:)?\/\//i.test(value) || value.startsWith('data:')) return value;
