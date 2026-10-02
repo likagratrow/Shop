@@ -1,6 +1,5 @@
 """Логика кнопки «🧵 Индивидуальный заказ»."""
 
-import sys
 from telebot import types
 
 INDIVIDUAL_ORDER_PROMPT = "Опишите, что бы вы хотели заказать?"
@@ -8,14 +7,6 @@ MEDIA_PROMPT = "Есть ли у вас картинки, наброски ил�
 CONTACT_PROMPT = "Спасибо! Для связи оставьте Telegram или, если удобнее, номер телефона 😊"
 SKIP_MEDIA_TEXT = "Готово"
 
-
-def _owner_id():
-    main = sys.modules.get("__main__")
-    owner_id = getattr(main, "YOUR_TELEGRAM_ID", None)
-    if owner_id is not None:
-        return owner_id
-    from Bot import YOUR_TELEGRAM_ID
-    return YOUR_TELEGRAM_ID
 
 
 def _media_keyboard():
@@ -36,7 +27,6 @@ def _finish(bot, chat_id, orders_db, phone=None):
     order = orders_db.get(chat_id)
     if not order:
         return
-    owner_id = _owner_id()
     order["phone"] = phone
     order["waiting_contact"] = False
     order["individual_contact"] = False
@@ -50,15 +40,15 @@ def _finish(bot, chat_id, orders_db, phone=None):
     owner_text += f"📱 Телефон: {phone}\n" if phone else "📱 Телефон: не предоставлен\n"
     media = order.get("individual_media", [])
     owner_text += f"\n📎 Референсов: {len(media)}"
-    bot.send_message(owner_id, owner_text)
+    if _owner_notifier is not None:
+        _owner_notifier(owner_text)
+    else:
+        print("Не настроен отправитель уведомлений владельцу.")
     for item in media:
-        try:
-            if item["type"] == "photo":
-                bot.send_photo(owner_id, item["file_id"])
-            else:
-                bot.send_document(owner_id, item["file_id"])
-        except Exception as error:
-            print("Не удалось передать референс:", error)
+        if _owner_media_notifier is not None:
+            _owner_media_notifier(item["type"], item["file_id"])
+        else:
+            print("Не настроен отправитель референсов владельцу.")
     bot.send_message(chat_id, "Спасибо! Всё передал мастеру. Мы свяжемся с вами в рабочее время Пн–Пт, 10:00–18:00 (Екатеринбург). 😊", reply_markup=types.ReplyKeyboardRemove())
     bot.send_message(chat_id, "Выберите, что хотите сделать.", reply_markup=_shop_keyboard())
     order["completed"] = True
