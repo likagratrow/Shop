@@ -119,10 +119,15 @@
         }
 
         lines.push('------------------------------');
+        lines.push(`Доступ: найден=${values.get('access-found') ?? '—'}, уровень=${values.get('access-level') || '—'}, полный=${values.get('access-full') ?? '—'}`);
+        lines.push(`Разрешённых уровней: ${values.get('access-levels') || '—'}`);
         lines.push(`Базовых товаров: ${values.get('public-products-count') ?? '—'}`);
         lines.push(`Доп. товаров: ${values.get('restricted-products-count') ?? '—'}`);
         lines.push(`Всего товаров: ${values.get('products-count') ?? '—'}`);
         lines.push(`Картинок в первом render: ${imageTotal || '—'}`);
+        if (values.get('restricted-error')) {
+            lines.push(`ОШИБКА restricted: ${values.get('restricted-error')}`);
+        }
 
         if (marks.has('products:error')) {
             lines.push(`ОШИБКА: ${marks.get('products:error').detail || 'неизвестно'}`);
@@ -172,12 +177,19 @@
                         : 'идёт загрузка';
 
         const productCount = values.get('products-count');
+        const accessInfo = values.get('access-levels')
+            ? `уровни: ${values.get('access-levels')}`
+            : `доступных уровней: ${values.get('access-level-count') ?? '—'}`;
 
         root.getElementById('content').innerHTML = `
             <div class="title">SHOP DEBUG</div>
             <div class="status">${escapeHtml(status)}</div>
             <div class="rows">${rows.join('')}</div>
-            <div class="meta">${productCount !== undefined ? `Товаров: ${escapeHtml(productCount)}` : ''}</div>
+            <div class="meta">
+                ${productCount !== undefined ? `Товаров: ${escapeHtml(productCount)}` : ''}
+                <br>
+                Access: ${escapeHtml(accessInfo)}
+            </div>
             <div class="actions">
                 <button id="copy">Скопировать</button>
                 <button id="hide">Скрыть</button>
