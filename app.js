@@ -115,25 +115,36 @@ function getImageUrl(image, width = 1400) {
     return 'images/' + encodeURIComponent(value);
 }
 
-function getCatalogSheetUrl() {
+function getCatalogSheetUrl(mode = 'public') {
     const columns = 'A,B,C,D,E,F,G,H,I,J,K';
-    let where = "P is null or P = ''";
+
+    if (mode === 'public') {
+        const where = "P is null or P = ''";
+        return SHEET_URL + '&tq=' + encodeURIComponent('select ' + columns + ' where ' + where);
+    }
+
+    if (mode !== 'restricted') {
+        throw new Error(`Неизвестный режим каталога: ${mode}`);
+    }
 
     if (accessFull) {
-        return SHEET_URL + '&tq=' + encodeURIComponent('select ' + columns);
+        const where = "P is not null and P <> ''";
+        return SHEET_URL + '&tq=' + encodeURIComponent('select ' + columns + ' where ' + where);
     }
 
     const allowed = Array.from(accessLevelIds)
         .map(value => String(value).trim())
         .filter(Boolean);
 
-    if (allowed.length) {
-        const escaped = allowed
-            .map(value => value.replace(/\\/g, '\\\\').replace(/'/g, "''"))
-            .join('|');
-
-        where += " or P matches '(^|[,;\\n])(" + escaped + ")([,;\\n]|$)'";
+    if (!allowed.length) {
+        return null;
     }
+
+    const escaped = allowed
+        .map(value => value.replace(/\\/g, '\\\\').replace(/'/g, "''"))
+        .join('|');
+
+    const where = "P matches '(^|[,;\\n])(" + escaped + ")([,;\\n]|$)'";
 
     return SHEET_URL + '&tq=' + encodeURIComponent('select ' + columns + ' where ' + where);
 }
@@ -242,25 +253,45 @@ function shopProductHasAccess(product) {
     return requiredLevels.some(levelId => accessLevelIds.has(levelId));
 }
 
-async function loadProducts() {
-    window.shopDebug?.mark('products:start');
+async function loadProducts(mode = 'public') {
+    const isPublic = mode === 'public';
+    const debugPrefix = isPublic ? 'public' : 'restricted';
     const container = document.getElementById('products');
-    if (container) container.innerHTML = '<div class="loading">Загрузка товаров...</div>';
+
+    window.shopDebug?.mark(`products:${debugPrefix}:start`);
+
+    if (isPublic && container) {
+        container.innerHTML = '<div class="loading">Загрузка товаров...</div>';
+    }
+
+    const catalogUrl = getCatalogSheetUrl(mode);
+
+    if (!catalogUrl) {
+        window.shopDebug?.mark('products:restricted:skipped');
+        window.shopDebug?.setValue('restricted-products-count', 0);
+        return false;
+    }
 
     try {
-        window.shopDebug?.mark('sheets:request:start');
-        const response = await fetch(getCatalogSheetUrl(), {method: 'GET', cache: 'no-store'});
-        window.shopDebug?.mark('sheets:response');
-        if (!response.ok) throw new Error(`Google Sheets вернул HTTP ${response.status}`);
+        window.shopDebug?.mark(`sheets:${debugPrefix}:request:start`);
+        const response = await fetch(catalogUrl, {method: 'GET', cache: 'no-store'});
+        window.shopDebug?.mark(`sheets:${debugPrefix}:response`);
+
+        if (!response.ok) {
+            throw new Error(`Google Sheets вернул HTTP ${response.status}`);
+        }
+
         const text = await response.text();
-        window.shopDebug?.mark('sheets:text');
+        window.shopDebug?.mark(`sheets:${debugPrefix}:text`);
+
         const json = parseGvizResponse(text);
-        window.shopDebug?.mark('sheets:parsed');
+        window.shopDebug?.mark(`sheets:${debugPrefix}:parsed`);
+
         if (!json.table || !Array.isArray(json.table.rows)) {
             throw new Error('В ответе Google Таблицы отсутствуют строки с товарами.');
         }
 
-        products = json.table.rows.map((row, index) => {
+        const loadedProducts = json.table.rows.map((row, index) => {
             const cells = row.c || [];
             const value = (columnIndex, fallback = '') => {
                 const cell = cells[columnIndex];
@@ -294,21 +325,62 @@ async function loadProducts() {
             };
         }).filter(shopProductHasAccess);
 
-        window.shopDebug?.setValue('products-count', products.length);
-        window.shopDebug?.mark('products:mapped');
+        window.shopDebug?.setValue(
+            isPublic ? 'public-products-count' : 'restricted-products-count',
+            loadedProducts.length
+        );
+        window.shopDebug?.mark(`products:${debugPrefix}:mapped`);
 
-        console.log('Товары загружены:', products);
-        window.shopDebug?.mark('render:start');
+        if (isPublic) {
+            products = loadedProducts;
+        } else {
+            const mergedProducts = new Map(
+                products.map(product => [String(product.id), product])
+            );
+
+            loadedProducts.forEach(product => {
+                mergedProducts.set(String(product.id), product);
+            });
+
+            products = Array.from(mergedProducts.values());
+        }
+
+        window.shopDebug?.setValue('products-count', products.length);
+
+        console.log(
+            isPublic
+                ? 'Публичные товары загружены:'
+                : 'Дополнительные товары загружены:',
+            loadedProducts
+        );
+
+        window.shopDebug?.mark(`render:${debugPrefix}:start`);
         render();
-        window.shopDebug?.mark('render:done');
+        window.shopDebug?.mark(`render:${debugPrefix}:done`);
         updateCartButton();
-        window.shopDebug?.mark('products:ready');
+
+        window.shopDebug?.mark(`products:${debugPrefix}:ready`);
+        return true;
     } catch (error) {
-        console.error('Ошибка загрузки товаров:', error);
-        window.shopDebug?.mark('products:error', error?.message || String(error));
-        showLoadError(error);
+        console.error(
+            isPublic
+                ? 'Ошибка загрузки публичных товаров:'
+                : 'Ошибка загрузки дополнительных товаров:',
+            error
+        );
+
+        window.shopDebug?.mark(
+            `products:${debugPrefix}:error`,
+            error?.message || String(error)
+        );
+
+        if (isPublic) {
+            showLoadError(error);
+        }
+
+        return false;
     } finally {
-        window.shopDebug?.mark('products:end');
+        window.shopDebug?.mark(`products:${debugPrefix}:end`);
     }
 }
 
@@ -614,17 +686,23 @@ function addProductToCartFromModal(id) {
     if (quantityEl) quantityEl.innerText = getCartQuantity(id) || 0;
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     window.shopDebug?.mark('dom-ready');
     document.getElementById('search')?.addEventListener('input', render);
     document.getElementById('sort')?.addEventListener('change', render);
     document.addEventListener('keydown', event => {
         if (event.key === 'Escape') closeImageLightbox();
     });
-    loadShopAccess()
-        .then(() => loadProducts())
-        .catch(error => {
-            console.error('Ошибка инициализации доступа магазина:', error);
-            loadProducts();
-        });
+
+    const accessPromise = loadShopAccess();
+    const publicCatalogPromise = loadProducts('public');
+
+    await Promise.all([
+        accessPromise,
+        publicCatalogPromise
+    ]);
+
+    if (accessFull || accessLevelIds.size) {
+        await loadProducts('restricted');
+    }
 });
