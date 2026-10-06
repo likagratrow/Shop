@@ -165,11 +165,14 @@ function shopAccessList(value) {
 }
 
 async function loadShopAccess() {
+    window.shopDebug?.mark('access:start');
     const currentUser = shopTelegramUser();
 
     if (!currentUser?.id) {
         accessLevelIds = new Set();
         accessFull = false;
+        window.shopDebug?.mark('access:skipped');
+        window.shopDebug?.mark('access:end');
         return;
     }
 
@@ -180,6 +183,8 @@ async function loadShopAccess() {
             username: String(currentUser.username || '')
         });
 
+        window.shopDebug?.mark('access:request:start');
+
         const response = await fetch(
             `${ACCESS_API_URL}?${params.toString()}`,
             {
@@ -189,11 +194,15 @@ async function loadShopAccess() {
             }
         );
 
+        window.shopDebug?.mark('access:response');
+
         if (!response.ok) {
             throw new Error(`Access API вернул HTTP ${response.status}`);
         }
 
         const data = await response.json();
+
+        window.shopDebug?.mark('access:parsed');
 
         if (!data.ok) {
             throw new Error(data.error || 'Не удалось получить доступ пользователя.');
@@ -210,6 +219,9 @@ async function loadShopAccess() {
         console.warn('Не удалось получить доступ пользователя. Используется базовый доступ:', error);
         accessLevelIds = new Set();
         accessFull = false;
+        window.shopDebug?.mark('access:error', error?.message || String(error));
+    } finally {
+        window.shopDebug?.mark('access:end');
     }
 }
 
@@ -231,14 +243,19 @@ function shopProductHasAccess(product) {
 }
 
 async function loadProducts() {
+    window.shopDebug?.mark('products:start');
     const container = document.getElementById('products');
     if (container) container.innerHTML = '<div class="loading">Загрузка товаров...</div>';
 
     try {
+        window.shopDebug?.mark('sheets:request:start');
         const response = await fetch(getCatalogSheetUrl(), {method: 'GET', cache: 'no-store'});
+        window.shopDebug?.mark('sheets:response');
         if (!response.ok) throw new Error(`Google Sheets вернул HTTP ${response.status}`);
         const text = await response.text();
+        window.shopDebug?.mark('sheets:text');
         const json = parseGvizResponse(text);
+        window.shopDebug?.mark('sheets:parsed');
         if (!json.table || !Array.isArray(json.table.rows)) {
             throw new Error('В ответе Google Таблицы отсутствуют строки с товарами.');
         }
@@ -277,12 +294,21 @@ async function loadProducts() {
             };
         }).filter(shopProductHasAccess);
 
+        window.shopDebug?.setValue('products-count', products.length);
+        window.shopDebug?.mark('products:mapped');
+
         console.log('Товары загружены:', products);
+        window.shopDebug?.mark('render:start');
         render();
+        window.shopDebug?.mark('render:done');
         updateCartButton();
+        window.shopDebug?.mark('products:ready');
     } catch (error) {
         console.error('Ошибка загрузки товаров:', error);
+        window.shopDebug?.mark('products:error', error?.message || String(error));
         showLoadError(error);
+    } finally {
+        window.shopDebug?.mark('products:end');
     }
 }
 
@@ -419,6 +445,9 @@ function render() {
 
         return `<div class="product-card" data-product-id="${escapeHtml(String(product.id))}" data-product-category="${escapeHtml(product.category)}" data-product-balance="${escapeHtml(String(product.balance))}" onclick="openProductModal(${JSON.stringify(product.id)})">${imagesHtml}<h4>${escapeHtml(product.name)}</h4><p class="product-card-price"><b>${formatPrice(product.price)} ₽</b></p>${stockHtml}<div class="card-button-area">${getCardButtonHtml(product)}</div></div>`;
     }).join('');
+
+    window.shopDebug?.watchCatalogImages(container);
+    window.shopDebug?.markCatalogPaint();
 }
 
 function filterCategory(cat, button) {
@@ -586,6 +615,7 @@ function addProductToCartFromModal(id) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    window.shopDebug?.mark('dom-ready');
     document.getElementById('search')?.addEventListener('input', render);
     document.getElementById('sort')?.addEventListener('change', render);
     document.addEventListener('keydown', event => {
