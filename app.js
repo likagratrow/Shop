@@ -259,7 +259,7 @@ function shopProductHasAccess(product) {
     return requiredLevels.some(levelId => accessLevelIds.has(levelId));
 }
 
-async function loadProducts(mode = 'public') {
+async function loadCatalogProducts(mode = 'public') {
     const isPublic = mode === 'public';
     const debugPrefix = isPublic ? 'public' : 'restricted';
     const container = document.getElementById('products');
@@ -696,6 +696,14 @@ function addProductToCartFromModal(id) {
     if (quantityEl) quantityEl.innerText = getCartQuantity(id) || 0;
 }
 
+async function loadProducts(mode = 'public') {
+    return loadCatalogProducts(mode);
+}
+
+async function loadRestrictedProducts() {
+    return loadCatalogProducts('restricted');
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     window.shopDebug?.mark('dom-ready');
     document.getElementById('search')?.addEventListener('input', render);
@@ -713,6 +721,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     ]);
 
     if (accessFull || accessLevelIds.size) {
-        await loadProducts('restricted');
+        await loadRestrictedProducts();
     }
 });
