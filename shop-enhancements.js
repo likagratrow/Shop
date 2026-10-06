@@ -358,9 +358,10 @@ if (sortEl) {
 }
 
 const originalLoadProducts = loadProducts;
-loadProducts = async function() {
-    await originalLoadProducts();
+loadProducts = async function(mode = 'public') {
+    const result = await originalLoadProducts(mode);
     originalProductsOrder.splice(0, originalProductsOrder.length, ...products);
+    return result;
 };
 
 const productModal = document.getElementById('product-modal');
