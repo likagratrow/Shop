@@ -94,17 +94,22 @@
             ['Access API', duration('access:start', 'access:end')],
             ['  запрос Access API', duration('access:request:start', 'access:response')],
             ['  разбор Access API', duration('access:response', 'access:parsed')],
-            ['Google Sheets', duration('sheets:request:start', 'sheets:parsed')],
-            ['  ожидание Sheets', duration('sheets:request:start', 'sheets:response')],
-            ['  получение текста', duration('sheets:response', 'sheets:text')],
-            ['  разбор GViz', duration('sheets:text', 'sheets:parsed')],
-            ['Обработка товаров', duration('sheets:parsed', 'products:mapped')],
-            ['Render', duration('render:start', 'render:done')],
-            ['До первой отрисовки', getTime('catalog:painted')],
+            ['Базовые товары / Sheets', duration('sheets:public:request:start', 'sheets:public:parsed')],
+            ['  ожидание Sheets', duration('sheets:public:request:start', 'sheets:public:response')],
+            ['  получение текста', duration('sheets:public:response', 'sheets:public:text')],
+            ['  разбор GViz', duration('sheets:public:text', 'sheets:public:parsed')],
+            ['База: обработка', duration('sheets:public:parsed', 'products:public:mapped')],
+            ['База: Render', duration('render:public:start', 'render:public:done')],
+            ['ОТКРЫТИЕ → БАЗА', getTime('catalog:painted')],
+            ['Закрытые товары / Sheets', duration('sheets:restricted:request:start', 'sheets:restricted:parsed')],
+            ['  ожидание Sheets', duration('sheets:restricted:request:start', 'sheets:restricted:response')],
+            ['  получение текста', duration('sheets:restricted:response', 'sheets:restricted:text')],
+            ['  разбор GViz', duration('sheets:restricted:text', 'sheets:restricted:parsed')],
+            ['Доп. товары: обработка', duration('sheets:restricted:parsed', 'products:restricted:mapped')],
+            ['Доп. товары: Render', duration('render:restricted:start', 'render:restricted:done')],
             ['1-я картинка', firstImageAt],
-            ['Все картинки', lastImageAt],
-            ['Картинки: от первой до последней', firstImageAt !== null && lastImageAt !== null ? lastImageAt - firstImageAt : null],
-            ['ОТКРЫТИЕ → КАРТОЧКИ', getTime('catalog:painted')],
+            ['Последняя картинка', lastImageAt],
+            ['Картинки: первая → последняя', firstImageAt !== null && lastImageAt !== null ? lastImageAt - firstImageAt : null],
         ];
 
         for (const [label, value] of rows) {
@@ -114,7 +119,9 @@
         }
 
         lines.push('------------------------------');
-        lines.push(`Товаров: ${values.get('products-count') ?? '—'}`);
+        lines.push(`Базовых товаров: ${values.get('public-products-count') ?? '—'}`);
+        lines.push(`Доп. товаров: ${values.get('restricted-products-count') ?? '—'}`);
+        lines.push(`Всего товаров: ${values.get('products-count') ?? '—'}`);
         lines.push(`Картинок в первом render: ${imageTotal || '—'}`);
 
         if (marks.has('products:error')) {
@@ -136,13 +143,19 @@
         addRow(rows, 'Access API', duration('access:start', 'access:end'));
         addRow(rows, '↳ запрос', duration('access:request:start', 'access:response'));
         addRow(rows, '↳ разбор', duration('access:response', 'access:parsed'));
-        addRow(rows, 'Google Sheets', duration('sheets:request:start', 'sheets:parsed'));
-        addRow(rows, '↳ ожидание ответа', duration('sheets:request:start', 'sheets:response'));
-        addRow(rows, '↳ получение текста', duration('sheets:response', 'sheets:text'));
-        addRow(rows, '↳ разбор GViz', duration('sheets:text', 'sheets:parsed'));
-        addRow(rows, 'Обработка товаров', duration('sheets:parsed', 'products:mapped'));
-        addRow(rows, 'Render', duration('render:start', 'render:done'));
-        addRow(rows, 'До фактической отрисовки', getTime('catalog:painted'));
+        addRow(rows, 'Базовые товары / Sheets', duration('sheets:public:request:start', 'sheets:public:parsed'));
+        addRow(rows, '↳ ожидание ответа', duration('sheets:public:request:start', 'sheets:public:response'));
+        addRow(rows, '↳ получение текста', duration('sheets:public:response', 'sheets:public:text'));
+        addRow(rows, '↳ разбор GViz', duration('sheets:public:text', 'sheets:public:parsed'));
+        addRow(rows, 'База: обработка', duration('sheets:public:parsed', 'products:public:mapped'));
+        addRow(rows, 'База: Render', duration('render:public:start', 'render:public:done'));
+        addRow(rows, 'ОТКРЫТИЕ → БАЗА', getTime('catalog:painted'));
+        addRow(rows, 'Закрытые товары / Sheets', duration('sheets:restricted:request:start', 'sheets:restricted:parsed'));
+        addRow(rows, '↳ ожидание ответа', duration('sheets:restricted:request:start', 'sheets:restricted:response'));
+        addRow(rows, '↳ получение текста', duration('sheets:restricted:response', 'sheets:restricted:text'));
+        addRow(rows, '↳ разбор GViz', duration('sheets:restricted:text', 'sheets:restricted:parsed'));
+        addRow(rows, 'Доп. товары: обработка', duration('sheets:restricted:parsed', 'products:restricted:mapped'));
+        addRow(rows, 'Доп. товары: Render', duration('render:restricted:start', 'render:restricted:done'));
         addRow(rows, '1-я картинка', firstImageAt);
         addRow(rows, 'Последняя картинка', lastImageAt);
         addRow(rows, 'Картинки: первая → последняя',
@@ -150,9 +163,13 @@
 
         const status = lastImageAt !== null
             ? 'загрузка каталога завершена'
-            : imageWatchStarted
-                ? `картинки: ${imageFinished}/${imageTotal}`
-                : 'идёт загрузка';
+            : getTime('products:restricted:ready') !== null
+                ? 'база + закрытые товары загружены'
+                : getTime('products:public:ready') !== null
+                    ? 'база загружена, ждём доступ'
+                    : imageWatchStarted
+                        ? `картинки: ${imageFinished}/${imageTotal}`
+                        : 'идёт загрузка';
 
         const productCount = values.get('products-count');
 
