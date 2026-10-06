@@ -226,6 +226,12 @@ async function loadShopAccess() {
         );
 
         accessFull = Boolean(data.fullAccess);
+
+        window.shopDebug?.setValue('access-found', Boolean(data.foundInAccess));
+        window.shopDebug?.setValue('access-level', String(data.levelId || ''));
+        window.shopDebug?.setValue('access-full', accessFull);
+        window.shopDebug?.setValue('access-level-count', accessLevelIds.size);
+        window.shopDebug?.setValue('access-levels', Array.from(accessLevelIds).join(', '));
     } catch (error) {
         console.warn('Не удалось получить доступ пользователя. Используется базовый доступ:', error);
         accessLevelIds = new Set();
@@ -371,6 +377,10 @@ async function loadProducts(mode = 'public') {
 
         window.shopDebug?.mark(
             `products:${debugPrefix}:error`,
+            error?.message || String(error)
+        );
+        window.shopDebug?.setValue(
+            `${debugPrefix}-error`,
             error?.message || String(error)
         );
 
